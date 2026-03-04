@@ -1,2 +1,3 @@
 # tablet-note-app
-Basically Goodnotes + Parallel pages
+
+Basically Goodnotes + Parallel Pages
