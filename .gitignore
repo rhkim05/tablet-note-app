@@ -1,1 +1,15 @@
 node_modules
+
+# Android build outputs
+android/app/build/
+android/build/
+android/.gradle/
+android/app/debug.keystore
+*.apk
+*.aab
+
+# Metro
+.metro-health-check*
+
+# Misc
+.DS_Store
