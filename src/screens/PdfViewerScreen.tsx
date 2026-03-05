@@ -41,8 +41,7 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
         <Pdf
           source={{ uri: `file://${note.pdfUri}`, cache: true }}
           style={styles.pdf}
-          enablePaging
-          horizontal
+          enablePaging={false}
           onLoadComplete={(pages) => {
             setTotalPages(pages);
             setLoading(false);
