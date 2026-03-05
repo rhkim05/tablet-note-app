@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -9,45 +9,60 @@ import {
   Alert,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
+import RNFS from 'react-native-fs';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNotebookStore } from '../store/useNotebookStore';
+import { Note } from '../types/canvasTypes';
+import { RootStackParamList } from '../../App';
 
-interface Note {
-  id: string;
-  title: string;
-  updatedAt: Date;
-  type: 'note' | 'pdf';
-  pdfUri?: string;
-}
+type HomeNav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
-const formatDate = (date: Date) =>
-  date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const formatDate = (ts: number) =>
+  new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
 export default function HomeScreen() {
-  const [notes, setNotes] = useState<Note[]>([
-    { id: '1', title: 'My First Note', updatedAt: new Date(), type: 'note' },
-    { id: '2', title: 'Meeting Notes', updatedAt: new Date(Date.now() - 86400000), type: 'note' },
-  ]);
+  const navigation = useNavigation<HomeNav>();
+  const { notes, addNote, deleteNote } = useNotebookStore();
+
+  const openNote = (note: Note) => {
+    if (note.type === 'pdf') {
+      navigation.navigate('PdfViewer', { note });
+    }
+    // note type will navigate to NoteEditorScreen in the future
+  };
 
   const createNote = () => {
-    const newNote: Note = {
+    const note: Note = {
       id: Date.now().toString(),
       title: `Note ${notes.length + 1}`,
-      updatedAt: new Date(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
       type: 'note',
     };
-    setNotes(prev => [newNote, ...prev]);
+    addNote(note);
   };
 
   const importPdf = async () => {
     try {
       const result = await DocumentPicker.pickSingle({ type: DocumentPicker.types.pdf });
-      const newNote: Note = {
+
+      // Copy picked PDF into app's internal Documents directory so it persists
+      const destDir = `${RNFS.DocumentDirectoryPath}/pdfs`;
+      await RNFS.mkdir(destDir);
+      const fileName = `${Date.now()}_${result.name ?? 'imported.pdf'}`;
+      const destPath = `${destDir}/${fileName}`;
+      await RNFS.copyFile(result.uri, destPath);
+
+      const note: Note = {
         id: Date.now().toString(),
-        title: result.name ?? 'Imported PDF',
-        updatedAt: new Date(),
+        title: result.name?.replace(/\.pdf$/i, '') ?? 'Imported PDF',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
         type: 'pdf',
-        pdfUri: result.uri,
+        pdfUri: destPath,
       };
-      setNotes(prev => [newNote, ...prev]);
+      addNote(note);
     } catch (err) {
       if (!DocumentPicker.isCancel(err)) {
         Alert.alert('Error', 'Failed to import PDF.');
@@ -55,10 +70,10 @@ export default function HomeScreen() {
     }
   };
 
-  const deleteNote = (id: string) => {
-    Alert.alert('Delete Note', 'Are you sure you want to delete this note?', [
+  const confirmDelete = (id: string) => {
+    Alert.alert('Delete', 'Are you sure you want to delete this?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => setNotes(prev => prev.filter(n => n.id !== id)) },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteNote(id) },
     ]);
   };
 
@@ -90,7 +105,8 @@ export default function HomeScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.card}
-              onLongPress={() => deleteNote(item.id)}
+              onPress={() => openNote(item)}
+              onLongPress={() => confirmDelete(item.id)}
               activeOpacity={0.7}
             >
               <View style={styles.cardThumbnail}>
@@ -158,20 +174,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  pdfBadge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#E8402A',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  pdfBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
   list: {
     padding: 16,
     gap: 16,
@@ -194,6 +196,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 10,
     position: 'relative',
+  },
+  pdfBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#E8402A',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  pdfBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   cardTitle: {
     fontSize: 15,

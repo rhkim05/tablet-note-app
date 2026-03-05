@@ -8,18 +8,26 @@ A tablet note-taking app ("Goodnotes + Parallel Pages"). Built with a **hybrid R
 
 ## Commands
 
-No build scripts are defined in `package.json` yet. Standard React Native commands apply:
-
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (use --legacy-peer-deps — required due to version conflicts)
+npm install --legacy-peer-deps
 
-# Run on Android
+# Start Metro bundler (Terminal 1)
+npx react-native start
+
+# Build and run on Android emulator (Terminal 2)
 npx react-native run-android
 
 # TypeScript check
 npx tsc --noEmit
 ```
+
+### Android build requirements
+- **JDK 17** is required (JDK 21+ breaks Gradle 8.3). Path is pinned in `android/gradle.properties` via `org.gradle.java.home`.
+- `android/gradle.properties` sets `org.gradle.java.home=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home` — update this path if JDK 17 is installed elsewhere.
+- Gradle wrapper: 8.3, AGP: 8.1.1. Do not upgrade these — RN 0.73's gradle plugin has Kotlin warnings that become errors under Gradle 8.11+.
+- `androidx.core` and `androidx.transition` are pinned to older versions in `android/build.gradle` via `resolutionStrategy` to stay within `compileSdk 34`.
+- The `native_modules.gradle` path in `android/settings.gradle` and `android/app/build.gradle` points to `node_modules/react-native/node_modules/@react-native-community/cli-platform-android/` (not the root `node_modules/`) due to npm hoisting.
 
 ## Project Structure
 
@@ -35,63 +43,41 @@ tablet-note-app/
 │       ├── CanvasViewManager.kt   # Exposes DrawingCanvas as RN UI component
 │       ├── CanvasModule.kt        # Exposes Kotlin methods (save, clear, etc.) to JS
 │       └── CanvasPackage.kt       # Registers both with RN engine
-├── src/                           # React Native (TypeScript)
-│   ├── components/                # Toolbar.tsx, ColorPicker.tsx
-│   ├── screens/                   # HomeScreen.tsx, NoteEditorScreen.tsx
-│   ├── store/                     # Zustand stores
-│   ├── native/                    # CanvasView.tsx, CanvasModule.ts (bridge wrappers)
-│   └── types/canvasTypes.ts       # Shared types between RN and Kotlin
-└── App.tsx                        # Entry point, navigation setup
+├── src/
+│   ├── screens/
+│   │   ├── HomeScreen.tsx         # Note grid, PDF import button
+│   │   ├── PdfViewerScreen.tsx    # Renders PDF pages via react-native-pdf
+│   │   └── NoteEditorScreen.tsx   # (stub) Drawing canvas screen
+│   ├── store/
+│   │   ├── useNotebookStore.ts    # Notes list (addNote, deleteNote)
+│   │   ├── useToolStore.ts        # (stub) Active pen/eraser state
+│   │   └── useEditorStore.ts      # (stub) Current page, zoom
+│   ├── native/                    # Bridge wrappers (stubs)
+│   │   ├── CanvasView.tsx         # Maps Kotlin DrawingCanvas as RN component
+│   │   └── CanvasModule.ts        # TypeScript wrapper for Kotlin canvas methods
+│   └── types/canvasTypes.ts       # Shared types: Note, NoteType, StrokeStyle, ToolMode
+└── App.tsx                        # NavigationContainer + RootStackParamList
 ```
 
 ## Architecture
 
-### Hybrid RN + Native Drawing Engine
+### Navigation (`App.tsx`)
+Uses `@react-navigation/native-stack`. Route types are exported from `App.tsx` as `RootStackParamList`. Current routes: `Home` and `PdfViewer: { note: Note }`. `NoteEditorScreen` is not yet wired into navigation.
 
-The core design decision: drawing is handled entirely in Kotlin (`android/app/src/main/java/com/tabletnoteapp/canvas/`) using Android Canvas API, bypassing the React Native bridge for rendering. The bridge is only used for commands (tool changes, save, undo) and events (stroke completed, etc.).
+### PDF Import Flow
+1. User taps "Import PDF" → `react-native-document-picker` opens system file picker
+2. Selected file is copied to `DocumentDirectoryPath/pdfs/` via `react-native-fs`
+3. A `Note` object (`type: 'pdf'`, `pdfUri: <internal path>`) is saved to `useNotebookStore`
+4. Tapping the PDF card navigates to `PdfViewerScreen` with the note passed as a route param
 
-**Data flow for drawing:**
+### State Management
+- `useNotebookStore` — the only implemented store; holds `Note[]` in memory (no persistence yet)
+- `Note` type is defined in `src/types/canvasTypes.ts` and is the shared contract across screens and the store
 
-1. Touch events → `DrawingCanvas.kt` (Kotlin, native speed)
-2. Stroke smoothing → `BezierSmoother.kt`
-3. Tool state changes (pen type, color, thickness) → Zustand store in RN → `CanvasModule.ts` bridge → Kotlin
+### Hybrid Drawing Engine (not yet active)
+Drawing will be handled entirely in Kotlin (`canvas/`) using Android Canvas API, bypassing the RN bridge for rendering. The bridge (`reactbridge/`) is only for commands (tool changes, save, undo) and events. The `src/native/` files are stubs waiting for the Kotlin implementation.
 
-### React Native Bridge Layer (`src/native/`)
-
-- `CanvasView.tsx` — Maps the Kotlin `DrawingCanvas` view as a native RN component
-- `CanvasModule.ts` — Bridge for imperative commands to the canvas (save, clear, undo/redo, viewport pan/zoom) and receiving native events back
-
-### State Management (`src/store/`)
-
-Three Zustand stores:
-
-- `useToolStore` — Active tool state: pen type, color, thickness, eraser mode
-- `useNotebookStore` — Notebook/page list and metadata
-- `useEditorStore` — Editor-level state: current page, zoom level, etc.
-
-### Kotlin Native (`android/.../canvas/`)
-
-- `DrawingCanvas.kt` — Main canvas view, handles touch events and rendering
-- `BezierSmoother.kt` — Smooths raw touch points into bezier curves
-- `models/Point.kt`, `models/Stroke.kt` — Data models
-
-### React Native Bridge (`android/.../reactbridge/`)
-
-- `CanvasViewManager.kt` — Registers `DrawingCanvas` as a native RN view
-- `CanvasModule.kt` — Exposes imperative canvas methods to JS
-- `CanvasPackage.kt` — Registers both with the React Native package system
-
-### Shared Types (`src/types/canvasTypes.ts`)
-
-TypeScript types that mirror Kotlin data models — defines the contract between RN and Kotlin (pen colors, stroke thickness, tool modes, etc.).
-
-## Planned Stack (from `stack.yaml`)
-
-The following libraries are planned but not yet installed:
-
-- `react-native-skia` — Alternative drawing engine (evaluate vs. current Kotlin approach)
-- `react-native-gesture-handler` + `react-native-reanimated` — Gesture and animation
-- `WatermelonDB` or `Realm` — Local database for notes
-- `react-native-mmkv` — Fast key-value storage
-- OpenAI / Anthropic Claude API — AI integration
-- `react-native-fast-image` — Image handling
+### Known Dependency Quirks
+- `npm install` requires `--legacy-peer-deps` due to conflicts between installed library versions and RN 0.73
+- `react-native-pdf` requires `react-native-blob-util` as a peer dependency
+- `@react-native/metro-config` must be installed explicitly (not bundled in this setup)

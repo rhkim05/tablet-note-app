@@ -4,3 +4,5 @@
 2. android/.../reactbridge/CanvasModule.kt (Kotlin): RN에서 넘어온 URI 문자열을 받아들이는 네이티브 함수(loadPdf)가 위치합니다.
 
 3. android/.../canvas/DrawingCanvas.kt (Kotlin): 전달받은 Bitmap을 뷰의 크기에 맞춰 화면에 뿌려주는 역할을 합니다.
+
+
