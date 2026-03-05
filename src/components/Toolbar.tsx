@@ -7,11 +7,27 @@ import {
 } from 'react-native';
 import { useToolStore } from '../store/useToolStore';
 
-export default function Toolbar() {
+interface ToolbarProps {
+  onUndo?: () => void;
+  onRedo?: () => void;
+  showHandTool?: boolean;
+}
+
+export default function Toolbar({ onUndo, onRedo, showHandTool }: ToolbarProps) {
   const { activeTool, canUndo, canRedo, setTool } = useToolStore();
 
   return (
     <View style={styles.container}>
+      {showHandTool && (
+        <TouchableOpacity
+          style={[styles.button, activeTool === 'select' && styles.buttonActive]}
+          onPress={() => setTool('select')}
+        >
+          <Text style={[styles.icon, activeTool === 'select' && styles.iconActive]}>✋</Text>
+          <Text style={[styles.label, activeTool === 'select' && styles.labelActive]}>Scroll</Text>
+        </TouchableOpacity>
+      )}
+
       <TouchableOpacity
         style={[styles.button, activeTool === 'pen' && styles.buttonActive]}
         onPress={() => setTool('pen')}
@@ -33,6 +49,7 @@ export default function Toolbar() {
       <TouchableOpacity
         style={[styles.button, !canUndo && styles.buttonDisabled]}
         disabled={!canUndo}
+        onPress={onUndo}
       >
         <Text style={[styles.icon, !canUndo && styles.iconDisabled]}>↩️</Text>
         <Text style={[styles.label, !canUndo && styles.labelDisabled]}>Undo</Text>
@@ -41,6 +58,7 @@ export default function Toolbar() {
       <TouchableOpacity
         style={[styles.button, !canRedo && styles.buttonDisabled]}
         disabled={!canRedo}
+        onPress={onRedo}
       >
         <Text style={[styles.icon, !canRedo && styles.iconDisabled]}>↪️</Text>
         <Text style={[styles.label, !canRedo && styles.labelDisabled]}>Redo</Text>

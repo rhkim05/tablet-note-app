@@ -1,19 +1,35 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  findNodeHandle,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
 import Toolbar from '../components/Toolbar';
+import CanvasView from '../native/CanvasView';
+import CanvasModule from '../native/CanvasModule';
+import { useToolStore } from '../store/useToolStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NoteEditor'>;
 
 export default function NoteEditorScreen({ route, navigation }: Props) {
   const { note } = route.params;
+  const canvasRef = useRef<any>(null);
+  const activeTool = useToolStore(s => s.activeTool);
+
+  const handleUndo = () => {
+    const tag = findNodeHandle(canvasRef.current);
+    if (tag) CanvasModule.undo(tag);
+  };
+
+  const handleRedo = () => {
+    const tag = findNodeHandle(canvasRef.current);
+    if (tag) CanvasModule.redo(tag);
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -25,10 +41,16 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
         <View style={styles.headerRight} />
       </View>
 
-      <Toolbar />
+      <Toolbar onUndo={handleUndo} onRedo={handleRedo} />
 
-      {/* Canvas placeholder — replace with <CanvasView /> once Kotlin engine is implemented */}
-      <View style={styles.canvas} />
+      <CanvasView
+        ref={canvasRef}
+        tool={activeTool}
+        penColor="#000000"
+        penThickness={4}
+        eraserThickness={24}
+        style={styles.canvas}
+      />
     </SafeAreaView>
   );
 }
