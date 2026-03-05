@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,29 +7,62 @@ import {
   SafeAreaView,
   findNodeHandle,
 } from 'react-native';
+import RNFS from 'react-native-fs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation';
 import Toolbar from '../components/Toolbar';
 import CanvasView from '../native/CanvasView';
 import CanvasModule from '../native/CanvasModule';
 import { useToolStore } from '../store/useToolStore';
+import { useNotebookStore } from '../store/useNotebookStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NoteEditor'>;
+
+const DRAWINGS_DIR = `${RNFS.DocumentDirectoryPath}/drawings`;
 
 export default function NoteEditorScreen({ route, navigation }: Props) {
   const { note } = route.params;
   const canvasRef = useRef<any>(null);
   const activeTool = useToolStore(s => s.activeTool);
+  const updateNote = useNotebookStore(s => s.updateNote);
 
-  const handleUndo = () => {
+  // Save strokes to file and update the note record
+  const saveStrokes = useCallback(async () => {
+    const tag = findNodeHandle(canvasRef.current);
+    if (!tag) return;
+    const json = await CanvasModule.getStrokes(tag);
+    if (json === '[]') return; // nothing to save
+    await RNFS.mkdir(DRAWINGS_DIR);
+    const filePath = `${DRAWINGS_DIR}/${note.id}.json`;
+    await RNFS.writeFile(filePath, json, 'utf8');
+    updateNote(note.id, { drawingUri: filePath, updatedAt: Date.now() });
+  }, [note.id, updateNote]);
+
+  // Save when the user navigates back
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', saveStrokes);
+    return unsub;
+  }, [navigation, saveStrokes]);
+
+  // Load strokes once the canvas is laid out
+  const handleLayout = useCallback(async () => {
+    if (!note.drawingUri) return;
+    const exists = await RNFS.exists(note.drawingUri);
+    if (!exists) return;
+    const json = await RNFS.readFile(note.drawingUri, 'utf8');
+    const tag = findNodeHandle(canvasRef.current);
+    if (tag) CanvasModule.loadStrokes(tag, json);
+  }, [note.drawingUri]);
+
+  const handleUndo = useCallback(() => {
     const tag = findNodeHandle(canvasRef.current);
     if (tag) CanvasModule.undo(tag);
-  };
+  }, []);
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     const tag = findNodeHandle(canvasRef.current);
     if (tag) CanvasModule.redo(tag);
-  };
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -50,6 +83,7 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
         penThickness={4}
         eraserThickness={24}
         style={styles.canvas}
+        onLayout={handleLayout}
       />
     </SafeAreaView>
   );

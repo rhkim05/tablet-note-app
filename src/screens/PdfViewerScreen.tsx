@@ -16,22 +16,38 @@ import Toolbar from '../components/Toolbar';
 import CanvasView from '../native/CanvasView';
 import CanvasModule from '../native/CanvasModule';
 import { useToolStore } from '../store/useToolStore';
+import { useNotebookStore } from '../store/useNotebookStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PdfViewer'>;
 
-// Isolated so tool changes don't re-render the PDF
-const PdfCanvasOverlay = React.memo(({ canvasRef }: { canvasRef: React.RefObject<any> }) => {
+const DRAWINGS_DIR = `${RNFS.DocumentDirectoryPath}/drawings`;
+
+// Always mounted so in-memory strokes survive scroll↔draw mode switches.
+// pointerEvents on the wrapper controls whether touches reach the PDF below.
+const PdfCanvasOverlay = React.memo(({
+  canvasRef,
+  onCanvasLayout,
+}: {
+  canvasRef: React.RefObject<any>;
+  onCanvasLayout: () => void;
+}) => {
   const tool = useToolStore(s => s.activeTool);
-  if (tool === 'select') return null;
   return (
-    <CanvasView
-      ref={canvasRef}
-      tool={tool}
-      penColor="#000000"
-      penThickness={4}
-      eraserThickness={24}
+    <View
       style={StyleSheet.absoluteFill}
-    />
+      pointerEvents={tool === 'select' ? 'none' : 'auto'}
+    >
+      <View style={styles.canvasLayout} onLayout={onCanvasLayout}>
+        <CanvasView
+          ref={canvasRef}
+          tool={tool}
+          penColor="#000000"
+          penThickness={4}
+          eraserThickness={24}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+    </View>
   );
 });
 
@@ -42,18 +58,47 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [pdfSource, setPdfSource] = useState<{ uri: string } | null>(null);
   const canvasRef = useRef<any>(null);
+  const updateNote = useNotebookStore(s => s.updateNote);
 
-  // Default to scroll (select) mode when entering PDF viewer
+  // Default to scroll mode on entry
   useEffect(() => {
     useToolStore.getState().setTool('select');
   }, []);
 
-  // Read file as base64 to bypass react-native-blob-util file:// URI issues
+  // Read PDF as base64 to bypass react-native-blob-util file:// issues
   useEffect(() => {
-    RNFS.readFile(note.pdfUri, 'base64').then(data => {
+    RNFS.readFile(note.pdfUri!, 'base64').then(data => {
       setPdfSource({ uri: `data:application/pdf;base64,${data}` });
     });
   }, [note.pdfUri]);
+
+  // Save strokes to file and update the note record
+  const saveStrokes = useCallback(async () => {
+    const tag = findNodeHandle(canvasRef.current);
+    if (!tag) return;
+    const json = await CanvasModule.getStrokes(tag);
+    if (json === '[]') return;
+    await RNFS.mkdir(DRAWINGS_DIR);
+    const filePath = `${DRAWINGS_DIR}/${note.id}.json`;
+    await RNFS.writeFile(filePath, json, 'utf8');
+    updateNote(note.id, { drawingUri: filePath, updatedAt: Date.now() });
+  }, [note.id, updateNote]);
+
+  // Save when navigating back
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', saveStrokes);
+    return unsub;
+  }, [navigation, saveStrokes]);
+
+  // Load strokes once the canvas is laid out
+  const handleCanvasLayout = useCallback(async () => {
+    if (!note.drawingUri) return;
+    const exists = await RNFS.exists(note.drawingUri);
+    if (!exists) return;
+    const json = await RNFS.readFile(note.drawingUri, 'utf8');
+    const tag = findNodeHandle(canvasRef.current);
+    if (tag) CanvasModule.loadStrokes(tag, json);
+  }, [note.drawingUri]);
 
   const handleUndo = useCallback(() => {
     const tag = findNodeHandle(canvasRef.current);
@@ -109,7 +154,7 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
             onError={onError}
           />
         )}
-        <PdfCanvasOverlay canvasRef={canvasRef} />
+        <PdfCanvasOverlay canvasRef={canvasRef} onCanvasLayout={handleCanvasLayout} />
       </View>
     </SafeAreaView>
   );
@@ -131,6 +176,7 @@ const styles = StyleSheet.create({
   pageCount: { color: '#AAAAAA', fontSize: 14, paddingLeft: 16, minWidth: 60, textAlign: 'right' },
   pdfContainer: { flex: 1 },
   pdf: { flex: 1, width: '100%' },
+  canvasLayout: { flex: 1 },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',

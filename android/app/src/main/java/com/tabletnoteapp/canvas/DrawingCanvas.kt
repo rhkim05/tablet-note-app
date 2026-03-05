@@ -14,6 +14,8 @@ import com.tabletnoteapp.canvas.models.Stroke
 import com.tabletnoteapp.canvas.models.StrokeStyle
 import com.tabletnoteapp.canvas.models.ToolType
 import com.tabletnoteapp.canvas.utils.BezierSmoother
+import org.json.JSONArray
+import org.json.JSONObject
 
 class DrawingCanvas(context: Context) : View(context) {
 
@@ -197,5 +199,59 @@ class DrawingCanvas(context: Context) : View(context) {
         bitmap?.eraseColor(Color.TRANSPARENT)
         notifyUndoRedoState()
         invalidate()
+    }
+
+    // ── Serialization ─────────────────────────────────────────────────────────
+
+    fun getStrokesJson(): String {
+        val strokesArray = JSONArray()
+        for (stroke in committedStrokes) {
+            val strokeObj = JSONObject()
+            strokeObj.put("tool", stroke.style.tool.name)
+            strokeObj.put("color", stroke.style.color)
+            strokeObj.put("thickness", stroke.style.thickness.toDouble())
+
+            val pointsArray = JSONArray()
+            for (point in stroke.points) {
+                val pointObj = JSONObject()
+                pointObj.put("x", point.x.toDouble())
+                pointObj.put("y", point.y.toDouble())
+                pointObj.put("pressure", point.pressure.toDouble())
+                pointsArray.put(pointObj)
+            }
+            strokeObj.put("points", pointsArray)
+            strokesArray.put(strokeObj)
+        }
+        return strokesArray.toString()
+    }
+
+    fun loadStrokesJson(json: String) {
+        committedStrokes.clear()
+        redoStack.clear()
+
+        val strokesArray = JSONArray(json)
+        for (i in 0 until strokesArray.length()) {
+            val strokeObj = strokesArray.getJSONObject(i)
+            val tool = ToolType.valueOf(strokeObj.getString("tool"))
+            val style = StrokeStyle(
+                color     = strokeObj.getInt("color"),
+                thickness = strokeObj.getDouble("thickness").toFloat(),
+                tool      = tool,
+            )
+            val stroke = Stroke(style = style)
+            val pointsArray = strokeObj.getJSONArray("points")
+            for (j in 0 until pointsArray.length()) {
+                val pointObj = pointsArray.getJSONObject(j)
+                stroke.addPoint(Point(
+                    x        = pointObj.getDouble("x").toFloat(),
+                    y        = pointObj.getDouble("y").toFloat(),
+                    pressure = pointObj.getDouble("pressure").toFloat(),
+                ))
+            }
+            committedStrokes.add(stroke)
+        }
+
+        redrawBitmap()
+        notifyUndoRedoState()
     }
 }

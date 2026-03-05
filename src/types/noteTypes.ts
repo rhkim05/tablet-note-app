@@ -6,5 +6,6 @@ export interface Note {
   createdAt: number; // unix timestamp
   updatedAt: number; // unix timestamp
   type: NoteType;
-  pdfUri?: string;   // internal app storage path (only for pdf type)
+  pdfUri?: string;      // internal app storage path (only for pdf type)
+  drawingUri?: string;  // path to saved strokes JSON file
 }

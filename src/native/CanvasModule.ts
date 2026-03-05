@@ -8,4 +8,6 @@ export default {
   undo: (viewTag: number) => CanvasModule.undo(viewTag),
   redo: (viewTag: number) => CanvasModule.redo(viewTag),
   clear: (viewTag: number) => CanvasModule.clear(viewTag),
+  getStrokes: (viewTag: number): Promise<string> => CanvasModule.getStrokes(viewTag),
+  loadStrokes: (viewTag: number, json: string) => CanvasModule.loadStrokes(viewTag, json),
 };

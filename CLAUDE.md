@@ -107,6 +107,7 @@ Drawing will be handled entirely in Kotlin (`canvas/`) using Android Canvas API,
   - `react-native-safe-area-context@4.10.0` (4.11+ breaks)
   - `react-native-blob-util@0.19.11` (0.21+ breaks)
   - `@react-navigation/native@6.x` + `@react-navigation/native-stack@6.x` (v7 requires screens 4.x)
+  - `@react-native-async-storage/async-storage@1.23.1` (v2+ requires Kotlin 2.1.0 via KSP; project uses Kotlin 1.8.0)
 
 ### Git / GitHub
 - `android/app/build/` is in `.gitignore` — never commit build outputs. The debug APK is 164MB and will be rejected by GitHub.
