@@ -8,113 +8,110 @@ A tablet note-taking app ("Goodnotes + Parallel Pages"). Built with a **hybrid R
 
 ## Commands
 
+**macOS:**
 ```bash
-# Install dependencies (use --legacy-peer-deps — required due to version conflicts)
 npm install --legacy-peer-deps
-
-# Start Metro bundler (Terminal 1)
-npx react-native start
-
-# Build and run on Android emulator (Terminal 2)
-npx react-native run-android
-
-# TypeScript check
-npx tsc --noEmit
+npx react-native start          # Terminal 1 — Metro bundler
+npx react-native run-android    # Terminal 2 — build & deploy
+npx tsc --noEmit                # TypeScript check
 ```
+
+**Windows:**
+```cmd
+npm install --legacy-peer-deps
+.\node_modules\.bin\react-native start
+.\node_modules\.bin\react-native run-android
+.\node_modules\.bin\tsc --noEmit
+```
+
+> On Windows, `npx` may not be available — use `.\node_modules\.bin\` directly if so.
 
 ### Android build requirements
 
-- **JDK 17** is required (JDK 21+ breaks Gradle 8.3). Path is pinned in `android/gradle.properties` via `org.gradle.java.home`.
-- `android/gradle.properties` sets `org.gradle.java.home=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home` — update this path if JDK 17 is installed elsewhere.
-- Gradle wrapper: 8.3, AGP: 8.1.1. Do not upgrade these — RN 0.73's gradle plugin has Kotlin warnings that become errors under Gradle 8.11+.
-- `androidx.core` and `androidx.transition` are pinned to older versions in `android/build.gradle` via `resolutionStrategy` to stay within `compileSdk 34`.
-- The `native_modules.gradle` path in `android/settings.gradle` and `android/app/build.gradle` points to `node_modules/react-native/node_modules/@react-native-community/cli-platform-android/` (not the root `node_modules/`) due to npm hoisting.
+**JDK 17 is required** (JDK 21+ breaks Gradle 8.3). Set the path in `android/gradle.properties`:
 
-## Project Structure
+```properties
+# macOS example
+org.gradle.java.home=/Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home
 
+# Windows example
+org.gradle.java.home=C:\\Program Files\\jdk-17.0.18+8
 ```
-tablet-note-app/
-├── index.js                       # App entry point, registers TabletNoteApp component
-├── App.tsx                        # Entry point, mounts <Navigation />
-├── metro.config.js
-├── android/
-│   ├── build.gradle               # AGP 8.1.1, compileSdk 34, androidx pins
-│   ├── gradle.properties          # JDK 17 path, Hermes, new arch flags
-│   ├── settings.gradle
-│   └── app/
-│       ├── build.gradle
-│       └── src/main/java/com/tabletnoteapp/
-│           ├── MainActivity.kt
-│           ├── MainApplication.kt
-│           ├── canvas/                    # Pure drawing engine (no RN dependency)
-│           │   ├── DrawingCanvas.kt       # Custom View: touch events + rendering
-│           │   ├── models/Stroke.kt
-│           │   ├── models/Point.kt        # Point (x, y, pressure)
-│           │   └── utils/BezierSmoother.kt
-│           └── reactbridge/               # RN <-> Kotlin bridge
-│               ├── CanvasViewManager.kt
-│               ├── CanvasModule.kt
-│               └── CanvasPackage.kt
-├── src/
-│   ├── screens/
-│   │   ├── HomeScreen.tsx         # Note grid, PDF import button
-│   │   ├── PdfViewerScreen.tsx    # PDF viewer + canvas overlay for drawing on PDFs
-│   │   └── NoteEditorScreen.tsx   # Blank drawing canvas screen
-│   ├── store/
-│   │   ├── useNotebookStore.ts    # Notes list with AsyncStorage persistence (addNote, deleteNote, updateNote)
-│   │   ├── useToolStore.ts        # Active tool state (pen/eraser/select), undo/redo availability
-│   │   └── useEditorStore.ts      # (stub) Current page, zoom
-│   ├── navigation/
-│   │   └── index.tsx              # NavigationContainer + RootStackParamList (Home, PdfViewer, NoteEditor)
-│   ├── native/                    # Bridge wrappers
-│   │   ├── CanvasView.tsx         # requireNativeComponent wrapper with forwardRef
-│   │   └── CanvasModule.ts        # undo/redo/clear/getStrokes/loadStrokes imperative commands
-│   ├── components/
-│   │   ├── Toolbar.tsx            # (stub)
-│   │   └── ColorPicker.tsx        # (stub)
-│   ├── utils/
-│   │   ├── canvas.ts              # (stub)
-│   │   ├── geometry.ts            # (stub)
-│   │   └── performance.ts         # (stub)
-│   └── types/
-│       ├── noteTypes.ts           # Note, NoteType
-│       └── canvasTypes.ts         # PenColor, ToolMode, StrokeStyle (RN <-> Kotlin contract)
+
+**Android SDK** location must be set in `android/local.properties` (not committed — create it if missing):
+
+```properties
+# macOS
+sdk.dir=/Users/<you>/Library/Android/sdk
+
+# Windows
+sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
 ```
+
+Other build constraints:
+- Gradle wrapper: 8.3, AGP: 8.1.1. Do not upgrade — RN 0.73's Gradle plugin has Kotlin warnings that become errors under Gradle 8.11+.
+- `androidx.core` and `androidx.transition` are pinned in `android/build.gradle` via `resolutionStrategy` to stay within `compileSdk 34`.
+- The `native_modules.gradle` path in `android/settings.gradle` and `android/app/build.gradle` points to `node_modules/react-native/node_modules/@react-native-community/cli-platform-android/` (not root `node_modules/`) due to npm hoisting.
+
+### Physical device (Windows + tablet)
+
+1. Enable Developer Options on device → turn on USB Debugging
+2. Connect via USB and accept the "Allow USB debugging?" prompt
+3. Verify: `adb devices` — must show `device` (not `unauthorized`)
+4. Run Metro + `run-android` as normal
+
+### Emulator (macOS or Windows without tablet)
+
+Create and start an AVD via Android Studio's Device Manager before running `run-android`. React Native will auto-detect the running emulator.
 
 ## Architecture
 
 ### Navigation (`src/navigation/index.tsx`)
 
-Uses `@react-navigation/native-stack`. `RootStackParamList` and the `NavigationContainer` live in `src/navigation/index.tsx`. `App.tsx` just mounts `<Navigation />`. Current routes: `Home` and `PdfViewer: { note: Note }`. `NoteEditorScreen` is not yet wired in.
+Uses `@react-navigation/native-stack`. All three routes are wired and active: `Home`, `PdfViewer: { note: Note }`, `NoteEditor: { note: Note }`. `App.tsx` just mounts `<Navigation />`.
 
-### PDF Import Flow
+### Drawing Engine
 
-1. User taps "Import PDF" → `react-native-document-picker` opens system file picker
-2. Selected file is copied to `DocumentDirectoryPath/pdfs/` via `react-native-fs`
-3. A `Note` object (`type: 'pdf'`, `pdfUri: <internal path>`) is saved to `useNotebookStore`
-4. Tapping the PDF card navigates to `PdfViewerScreen` with the note passed as a route param
+The Kotlin drawing engine in `android/.../canvas/` is fully active. `DrawingCanvas.kt` is a custom `View` that handles touch events and renders via Android Canvas — no RN bridge involvement during drawing. Key details:
+
+- Uses an off-screen `Bitmap` to cache committed strokes; only the active in-progress stroke is replayed each `onDraw`.
+- Eraser uses `PorterDuff.Mode.CLEAR` — requires `LAYER_TYPE_SOFTWARE` (hardware acceleration breaks it).
+- Undo replays all committed strokes onto a fresh bitmap; redo appends the restored stroke to the existing bitmap.
+- After each stroke commit or undo/redo, Kotlin emits a `canvasUndoRedoState` device event `{ canUndo, canRedo }`. `CanvasView.tsx` subscribes via `DeviceEventEmitter` and syncs `useToolStore`.
+
+### Bridge (`reactbridge/` ↔ `src/native/`)
+
+- **`CanvasViewManager.kt`** — exposes `DrawingCanvas` as native view `"CanvasView"`. Props: `tool`, `penColor`, `penThickness`, `eraserThickness`.
+- **`CanvasModule.kt`** — imperative commands via view tag from `findNodeHandle`: `undo`, `redo`, `clear`, `getStrokes` (async, returns JSON string), `loadStrokes`.
+- **`src/native/CanvasView.tsx`** — `requireNativeComponent` wrapper with `forwardRef`; owns the `DeviceEventEmitter` subscription for undo/redo state.
+- **`src/native/CanvasModule.ts`** — thin JS wrapper over `NativeModules.CanvasModule`.
+
+### Stroke Persistence
+
+Both `NoteEditorScreen` and `PdfViewerScreen` use the same pattern:
+- **Save** (`beforeRemove` navigation event): `getStrokes(tag)` → write JSON to `DocumentDirectoryPath/drawings/<noteId>.json` → `updateNote` stores the path in `note.drawingUri`.
+- **Load** (canvas layout callback): if `note.drawingUri` exists, read the file and call `loadStrokes(tag, json)`.
+
+### PDF Flow
+
+1. Import: `react-native-document-picker` → copy to `DocumentDirectoryPath/pdfs/` via `react-native-fs` → save `Note { type: 'pdf', pdfUri }` to store.
+2. View: PDF is read as base64 and passed as a `data:application/pdf;base64,...` URI to `react-native-pdf` — workaround for `file://` URI issues with `react-native-blob-util`.
+3. Canvas overlay is always mounted over the PDF. `pointerEvents` on its wrapper toggles between `'none'` (scroll/select mode) and `'auto'` (draw mode) based on `useToolStore.activeTool`.
 
 ### State Management
 
-- `useNotebookStore` — the only implemented store; holds `Note[]` in memory (no persistence yet)
-- `Note` type is defined in `src/types/noteTypes.ts` and is the shared contract across screens and the store
-
-### Hybrid Drawing Engine (not yet active)
-
-Drawing will be handled entirely in Kotlin (`canvas/`) using Android Canvas API, bypassing the RN bridge for rendering. The bridge (`reactbridge/`) is only for commands (tool changes, save, undo) and events. The `src/native/` files are stubs waiting for the Kotlin implementation.
+- **`useNotebookStore`** — persists `Note[]` via zustand `persist` + AsyncStorage (key: `notebook-store`). `Note` type in `src/types/noteTypes.ts` includes optional `drawingUri`.
+- **`useToolStore`** — in-memory only. Holds `activeTool` (pen/eraser/select), `canUndo`, `canRedo`. Updated by `CanvasView`'s `DeviceEventEmitter` listener.
 
 ### Known Dependency Quirks
 
-- `npm install` requires `--legacy-peer-deps` due to conflicts between installed library versions and RN 0.73
-- `react-native-pdf` requires `react-native-blob-util` as a peer dependency
-- `@react-native/metro-config` must be installed explicitly (not bundled in this setup)
-- **Do not upgrade these packages** — they are pinned to the last versions compatible with RN 0.73 (which lacks `BaseReactPackage`):
-  - `react-native-screens@3.35.0` (3.36+ breaks)
-  - `react-native-safe-area-context@4.10.0` (4.11+ breaks)
-  - `react-native-blob-util@0.19.11` (0.21+ breaks)
-  - `@react-navigation/native@6.x` + `@react-navigation/native-stack@6.x` (v7 requires screens 4.x)
-  - `@react-native-async-storage/async-storage@1.23.1` (v2+ requires Kotlin 2.1.0 via KSP; project uses Kotlin 1.8.0)
+**Do not upgrade these packages** — pinned to last versions compatible with RN 0.73 (which lacks `BaseReactPackage`):
+- `react-native-screens@3.35.0` (3.36+ breaks)
+- `react-native-safe-area-context@4.10.0` (4.11+ breaks)
+- `react-native-blob-util@0.19.11` (0.21+ breaks)
+- `@react-navigation/native@6.x` + `@react-navigation/native-stack@6.x` (v7 requires screens 4.x)
+- `@react-native-async-storage/async-storage@1.23.1` (v2+ requires Kotlin 2.1.0 via KSP; project uses Kotlin 1.8.0)
 
 ### Git / GitHub
 
-- `android/app/build/` is in `.gitignore` — never commit build outputs. The debug APK is 164MB and will be rejected by GitHub.
+`android/app/build/` and `android/local.properties` are gitignored — never commit them. The debug APK is 164MB and will be rejected by GitHub.
