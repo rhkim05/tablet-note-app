@@ -64,6 +64,48 @@ Other build constraints:
 
 Create and start an AVD via Android Studio's Device Manager before running `run-android`. React Native will auto-detect the running emulator.
 
+## Project Structure
+
+```
+tablet-note-app/
+├── index.js                       # App entry point, registers TabletNoteApp component
+├── App.tsx                        # Mounts <Navigation />
+├── android/
+│   ├── build.gradle               # AGP 8.1.1, compileSdk 34, androidx pins
+│   ├── gradle.properties          # JDK 17 path, Hermes, new arch flags
+│   └── app/
+│       └── src/main/java/com/tabletnoteapp/
+│           ├── canvas/                    # Pure drawing engine (no RN dependency)
+│           │   ├── DrawingCanvas.kt       # Custom View: touch events + rendering
+│           │   ├── models/Stroke.kt
+│           │   ├── models/Point.kt        # Point (x, y, pressure)
+│           │   └── utils/BezierSmoother.kt
+│           └── reactbridge/               # RN <-> Kotlin bridge
+│               ├── CanvasViewManager.kt
+│               ├── CanvasModule.kt
+│               └── CanvasPackage.kt
+└── src/
+    ├── screens/
+    │   ├── HomeScreen.tsx         # Note grid, PDF import button
+    │   ├── PdfViewerScreen.tsx    # PDF viewer + canvas overlay
+    │   └── NoteEditorScreen.tsx   # Blank drawing canvas screen
+    ├── store/
+    │   ├── useNotebookStore.ts    # Notes list with AsyncStorage persistence
+    │   ├── useToolStore.ts        # Active tool state (pen/eraser/select), undo/redo
+    │   └── useEditorStore.ts      # (stub) Current page, zoom
+    ├── navigation/
+    │   └── index.tsx              # NavigationContainer + RootStackParamList
+    ├── native/                    # Bridge wrappers
+    │   ├── CanvasView.tsx         # requireNativeComponent wrapper with forwardRef
+    │   └── CanvasModule.ts        # undo/redo/clear/getStrokes/loadStrokes
+    ├── components/
+    │   ├── Toolbar.tsx            # (stub)
+    │   └── ColorPicker.tsx        # (stub)
+    └── types/
+        ├── noteTypes.ts           # Note, NoteType
+        └── canvasTypes.ts         # PenColor, ToolMode, StrokeStyle
+```
+
 ## Architecture
 
 ### Navigation (`src/navigation/index.tsx`)
