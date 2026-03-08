@@ -113,6 +113,11 @@ class PdfDrawingView(context: Context) : View(context) {
     private var isDragging     = false
     private val touchSlop      = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
 
+    // ── Scrollbar drag ────────────────────────────────────────────────────────
+    private var isScrollbarDragging = false
+    private var scrollbarThumbOffset = 0f                         // y offset within thumb at drag start
+    private val scrollbarTouchZoneW get() = 32f * resources.displayMetrics.density  // wider hit area
+
     // ── Drawing ───────────────────────────────────────────────────────────────
 
     private val committedStrokes = mutableListOf<Stroke>()
@@ -132,6 +137,9 @@ class PdfDrawingView(context: Context) : View(context) {
         xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
     }
     private val pageBgPaint = Paint().apply { color = Color.WHITE }
+    private val scrollbarActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(220, 120, 120, 120)
+    }
     private val scrollbarPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(160, 200, 200, 200)
     }
@@ -302,9 +310,10 @@ class PdfDrawingView(context: Context) : View(context) {
         val thumbH = (height.toFloat() * height / totalH).coerceIn(32f, height.toFloat())
         val thumbY = scrollY / (totalH - height) * (height - thumbH)
         val dp     = resources.displayMetrics.density
-        val barW   = 4f * dp
+        val barW   = if (isScrollbarDragging) 7f * dp else 4f * dp
         val barX   = width - barW - 3f * dp
-        canvas.drawRoundRect(barX, thumbY, barX + barW, thumbY + thumbH, barW / 2, barW / 2, scrollbarPaint)
+        val paint  = if (isScrollbarDragging) scrollbarActivePaint else scrollbarPaint
+        canvas.drawRoundRect(barX, thumbY, barX + barW, thumbY + thumbH, barW / 2, barW / 2, paint)
     }
 
     // ── Touch ─────────────────────────────────────────────────────────────────
@@ -317,11 +326,60 @@ class PdfDrawingView(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        // Scrollbar interaction takes priority over everything
+        val isScrollbarDown = event.actionMasked == MotionEvent.ACTION_DOWN && isOnScrollbar(event.x, event.y)
+        if (isScrollbarDragging || isScrollbarDown) return handleScrollbar(event)
+
         // Select mode: all input → scroll/zoom
         if (currentTool == ToolType.SELECT) return handleScroll(event)
 
         // Draw mode: all input draws (finger scroll only available via SELECT tool)
         return handleDraw(event)
+    }
+
+    private fun isOnScrollbar(x: Float, y: Float = -1f): Boolean {
+        val totalH = totalDocHeight * scale
+        if (totalH <= height) return false
+        if (x < width - scrollbarTouchZoneW) return false
+        if (y < 0f) return true  // x-only check (used during ongoing drag)
+        val thumbH = (height.toFloat() * height / totalH).coerceIn(32f, height.toFloat())
+        val thumbY = scrollY / (totalH - height) * (height - thumbH)
+        return y in thumbY..(thumbY + thumbH)
+    }
+
+    private fun handleScrollbar(event: MotionEvent): Boolean {
+        val totalH = totalDocHeight * scale
+        if (totalH <= height) return false
+
+        val thumbH = (height.toFloat() * height / totalH).coerceIn(32f, height.toFloat())
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                scroller.abortAnimation()
+                isScrollbarDragging = true
+                parent?.requestDisallowInterceptTouchEvent(true)
+                val thumbY = scrollY / (totalH - height) * (height - thumbH)
+                // isOnScrollbar already confirmed touch is on the thumb
+                scrollbarThumbOffset = event.y - thumbY
+                updateScrollFromThumbY(event.y - scrollbarThumbOffset, thumbH, totalH)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                updateScrollFromThumbY(event.y - scrollbarThumbOffset, thumbH, totalH)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                isScrollbarDragging = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+        }
+        invalidate()
+        return true
+    }
+
+    private fun updateScrollFromThumbY(thumbY: Float, thumbH: Float, totalH: Float) {
+        val maxThumbY = height - thumbH
+        val ratio = (thumbY / maxThumbY).coerceIn(0f, 1f)
+        scrollY = ratio * (totalH - height)
+        notifyPageChanged()
     }
 
     private fun handleScroll(event: MotionEvent): Boolean {
