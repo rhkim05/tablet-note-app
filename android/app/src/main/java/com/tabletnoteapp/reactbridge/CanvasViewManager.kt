@@ -34,6 +34,7 @@ class CanvasViewManager : SimpleViewManager<DrawingCanvas>() {
     fun setTool(view: DrawingCanvas, tool: String?) {
         view.currentTool = when (tool) {
             "eraser" -> ToolType.ERASER
+            "select" -> ToolType.SELECT
             else     -> ToolType.PEN
         }
     }

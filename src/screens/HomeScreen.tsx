@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,10 @@ import {
   StyleSheet,
   SafeAreaView,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
@@ -22,6 +26,14 @@ type HomeNav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 const formatDate = (ts: number) =>
   new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+const uniqueTitle = (base: string, existingNotes: Note[]): string => {
+  const titles = new Set(existingNotes.map(n => n.title));
+  if (!titles.has(base)) return base;
+  let i = 1;
+  while (titles.has(`${base} (${i})`)) i++;
+  return `${base} (${i})`;
+};
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNav>();
@@ -56,7 +68,7 @@ export default function HomeScreen() {
   const createNote = () => {
     const note: Note = {
       id: Date.now().toString(),
-      title: `Note ${notes.length + 1}`,
+      title: uniqueTitle('New Note', notes),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       type: 'note',
@@ -93,7 +105,7 @@ export default function HomeScreen() {
 
       const note: Note = {
         id: noteId,
-        title: result.name?.replace(/\.pdf$/i, '') ?? 'Imported PDF',
+        title: uniqueTitle(result.name?.replace(/\.pdf$/i, '') ?? 'Imported PDF', notes),
         createdAt: Date.now(),
         updatedAt: Date.now(),
         type: 'pdf',
@@ -108,11 +120,29 @@ export default function HomeScreen() {
     }
   };
 
-  const confirmDelete = (id: string) => {
-    Alert.alert('Delete', 'Are you sure you want to delete this?', [
+  const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
+  const [renameText, setRenameText] = useState('');
+
+  const onLongPress = (note: Note) => {
+    Alert.alert(note.title, undefined, [
+      { text: 'Rename', onPress: () => { setRenameText(note.title); setRenameTarget({ id: note.id, title: note.title }); } },
+      { text: 'Delete', style: 'destructive', onPress: () =>
+        Alert.alert('Delete', `Delete "${note.title}"?`, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: () => deleteNote(note.id) },
+        ])
+      },
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteNote(id) },
     ]);
+  };
+
+  const confirmRename = () => {
+    if (!renameTarget) return;
+    const trimmed = renameText.trim();
+    if (trimmed && trimmed !== renameTarget.title) {
+      updateNote(renameTarget.id, { title: uniqueTitle(trimmed, notes.filter(n => n.id !== renameTarget.id)) });
+    }
+    setRenameTarget(null);
   };
 
   return (
@@ -144,7 +174,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.card}
               onPress={() => openNote(item)}
-              onLongPress={() => confirmDelete(item.id)}
+              onLongPress={() => onLongPress(item)}
               activeOpacity={0.7}
             >
               <View style={styles.cardThumbnail}>
@@ -167,9 +197,49 @@ export default function HomeScreen() {
           )}
         />
       )}
+
+      <Modal visible={!!renameTarget} transparent animationType="fade" onRequestClose={() => setRenameTarget(null)}>
+        <KeyboardAvoidingView style={renameStyles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setRenameTarget(null)} />
+          <View style={renameStyles.box}>
+            <Text style={renameStyles.title}>Rename</Text>
+            <TextInput
+              style={renameStyles.input}
+              value={renameText}
+              onChangeText={setRenameText}
+              onSubmitEditing={confirmRename}
+              autoFocus
+              selectTextOnFocus
+              autoCorrect={false}
+              autoCapitalize="none"
+              keyboardType="default"
+            />
+            <View style={renameStyles.buttons}>
+              <TouchableOpacity style={renameStyles.cancel} onPress={() => setRenameTarget(null)}>
+                <Text style={renameStyles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={renameStyles.confirm} onPress={confirmRename}>
+                <Text style={renameStyles.confirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
+
+const renameStyles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
+  box:     { backgroundColor: '#FFF', borderRadius: 14, padding: 24, width: 300 },
+  title:   { fontSize: 16, fontWeight: '600', color: '#1A1A1A', marginBottom: 14 },
+  input:   { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 10, fontSize: 15, color: '#1A1A1A', marginBottom: 18 },
+  buttons: { flexDirection: 'row', gap: 10 },
+  cancel:  { flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: '#F0F0EA', alignItems: 'center' },
+  cancelText:  { color: '#555', fontSize: 15 },
+  confirm: { flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1A1A1A', alignItems: 'center' },
+  confirmText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
+});
 
 const styles = StyleSheet.create({
   container: {
