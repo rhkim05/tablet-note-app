@@ -19,10 +19,11 @@ class ColorGradientView(context: Context) : View(context) {
     private var _hue = 0f
     private var _sat = 1f
     private var _bri = 1f
+    private var isUserTouching = false
 
-    fun setHueProp(h: Float) { _hue = h.coerceIn(0f, 360f); buildGradients(); invalidate() }
-    fun setSatProp(s: Float) { _sat = s.coerceIn(0f, 1f);   invalidate() }
-    fun setBriProp(b: Float) { _bri = b.coerceIn(0f, 1f);   invalidate() }
+    fun setHueProp(h: Float) { if (!isUserTouching) { _hue = h.coerceIn(0f, 360f); buildGradients(); invalidate() } }
+    fun setSatProp(s: Float) { if (!isUserTouching) { _sat = s.coerceIn(0f, 1f) } }
+    fun setBriProp(b: Float) { if (!isUserTouching) { _bri = b.coerceIn(0f, 1f) } }
 
     // ── Callbacks (async JS notification) ─────────────────────────────────────
 
@@ -116,6 +117,17 @@ class ColorGradientView(context: Context) : View(context) {
     // ── Touch ─────────────────────────────────────────────────────────────────
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> isUserTouching = true
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                // Notify JS with final value
+                onHueChange?.invoke(_hue)
+                onSVChange?.invoke(_sat, _bri)
+                // Delay clearing the flag so the JS round-trip echo is ignored
+                postDelayed({ isUserTouching = false }, 200L)
+                return true
+            }
+        }
         if (event.actionMasked != MotionEvent.ACTION_DOWN &&
             event.actionMasked != MotionEvent.ACTION_MOVE) return true
 
@@ -125,14 +137,14 @@ class ColorGradientView(context: Context) : View(context) {
         when {
             y >= hueBarTop -> {
                 _hue = (x / width * 360f).coerceIn(0f, 360f)
-                buildGradients()   // rebuild gradient for new hue
-                invalidate()       // immediate redraw — no bridge wait
+                buildGradients()
+                invalidate()
                 onHueChange?.invoke(_hue)
             }
             squareH > 0 && y in 0f..squareH.toFloat() -> {
                 _sat = (x / width).coerceIn(0f, 1f)
                 _bri = (1f - y / squareH).coerceIn(0f, 1f)
-                invalidate()       // immediate redraw — no bridge wait
+                invalidate()
                 onSVChange?.invoke(_sat, _bri)
             }
         }

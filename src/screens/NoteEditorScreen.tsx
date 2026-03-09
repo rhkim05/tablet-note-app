@@ -23,7 +23,10 @@ const DRAWINGS_DIR = `${RNFS.DocumentDirectoryPath}/drawings`;
 export default function NoteEditorScreen({ route, navigation }: Props) {
   const { note } = route.params;
   const canvasRef = useRef<any>(null);
-  const activeTool = useToolStore(s => s.activeTool);
+  const activeTool      = useToolStore(s => s.activeTool);
+  const penThickness    = useToolStore(s => s.penThickness);
+  const eraserThickness = useToolStore(s => s.eraserThickness);
+  const penColor        = useToolStore(s => s.penColor);
   const updateNote = useNotebookStore(s => s.updateNote);
 
   // Save strokes to file and update the note record
@@ -79,9 +82,9 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
       <CanvasView
         ref={canvasRef}
         tool={activeTool}
-        penColor="#000000"
-        penThickness={4}
-        eraserThickness={24}
+        penColor={penColor}
+        penThickness={penThickness}
+        eraserThickness={eraserThickness}
         style={styles.canvas}
         onLayout={handleLayout}
       />

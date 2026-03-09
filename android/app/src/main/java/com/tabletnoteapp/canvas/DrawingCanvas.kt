@@ -86,10 +86,19 @@ class DrawingCanvas(context: Context) : View(context) {
 
     // ── Touch handling ────────────────────────────────────────────────────────
 
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE)) {
+            return onTouchEvent(event)
+        }
+        return super.onGenericMotionEvent(event)
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val x = event.x
         val y = event.y
-        val pressure = event.pressure.coerceIn(0f, 1f)
+        val rawPressure = event.pressure.coerceIn(0f, 1f)
+        // 마우스 입력은 pressure가 항상 1.0이므로 스타일러스와 동일하게 처리
+        val pressure = if (event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE) 1f else rawPressure
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
