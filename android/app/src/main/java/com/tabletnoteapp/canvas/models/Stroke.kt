@@ -18,5 +18,6 @@ data class Stroke(
 
 sealed class UndoAction {
     data class AddStroke(val stroke: Stroke) : UndoAction()
-    data class EraseStrokes(val strokes: List<Stroke>) : UndoAction()
+    // entries: (originalIndex, stroke) — index in committedStrokes at gesture-start snapshot
+    data class EraseStrokes(val entries: List<Pair<Int, Stroke>>) : UndoAction()
 }

@@ -31,7 +31,8 @@ class DrawingCanvas(context: Context) : View(context) {
     private val undoStack           = mutableListOf<UndoAction>()
     private val redoStack           = mutableListOf<UndoAction>()
     private var activeStroke: Stroke? = null
-    private val strokeEraserBuffer  = mutableListOf<Stroke>() // accumulates strokes erased in one gesture
+    private val strokeEraserBuffer  = mutableListOf<Pair<Int, Stroke>>() // (originalIndex, stroke)
+    private var strokeOriginalIndexMap: Map<Stroke, Int> = emptyMap()
 
     // ── Tool settings (can be changed from RN bridge) ─────────────────────
 
@@ -63,6 +64,20 @@ class DrawingCanvas(context: Context) : View(context) {
         xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
     }
 
+    private val strokeEraserFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(55, 150, 150, 150)
+    }
+    private val strokeEraserBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        color = Color.argb(170, 90, 90, 90)
+    }
+
+    private var eraserCursorX = 0f
+    private var eraserCursorY = 0f
+    private var showEraserCursor = false
+
     // ── View lifecycle ───────────────────────────────────────────────────────
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -80,6 +95,10 @@ class DrawingCanvas(context: Context) : View(context) {
         activeStroke?.let { stroke ->
             val path = BezierSmoother.buildPath(stroke.points) ?: return@let
             canvas.drawPath(path, paintForStroke(stroke))
+        }
+        if (showEraserCursor) {
+            canvas.drawCircle(eraserCursorX, eraserCursorY, eraserThickness, strokeEraserFillPaint)
+            canvas.drawCircle(eraserCursorX, eraserCursorY, eraserThickness, strokeEraserBorderPaint)
         }
     }
 
@@ -105,18 +124,23 @@ class DrawingCanvas(context: Context) : View(context) {
                     parent?.requestDisallowInterceptTouchEvent(true)
                     redoStack.clear()
                     strokeEraserBuffer.clear()
+                    strokeOriginalIndexMap = committedStrokes.mapIndexed { i, s -> s to i }.toMap()
+                    eraserCursorX = x; eraserCursorY = y; showEraserCursor = true
                     eraseStrokesAtPoint(x, y)
                     notifyUndoRedoState()
                     invalidate()
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    eraserCursorX = x; eraserCursorY = y
                     eraseStrokesAtPoint(x, y)
                     invalidate()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    showEraserCursor = false
                     if (strokeEraserBuffer.isNotEmpty()) {
                         undoStack.add(UndoAction.EraseStrokes(strokeEraserBuffer.toList()))
                         strokeEraserBuffer.clear()
+                        strokeOriginalIndexMap = emptyMap()
                     }
                     notifyUndoRedoState()
                     invalidate()
@@ -163,12 +187,13 @@ class DrawingCanvas(context: Context) : View(context) {
 
     private fun eraseStrokesAtPoint(x: Float, y: Float) {
         val thresholdSq = eraserThickness * eraserThickness
-        val toRemove = committedStrokes.filter { stroke ->
-            strokeHitsPoint(stroke, x, y, thresholdSq)
-        }
+        val toRemove = committedStrokes.filter { it.style.tool != ToolType.ERASER && strokeHitsPoint(it, x, y, thresholdSq) }
         if (toRemove.isNotEmpty()) {
             committedStrokes.removeAll(toRemove.toSet())
-            strokeEraserBuffer.addAll(toRemove)
+            toRemove.forEach { stroke ->
+                val origIdx = strokeOriginalIndexMap[stroke] ?: 0
+                strokeEraserBuffer.add(origIdx to stroke)
+            }
             redrawBitmap()
         }
     }
@@ -213,8 +238,14 @@ class DrawingCanvas(context: Context) : View(context) {
     fun undo() {
         val action = undoStack.removeLastOrNull() ?: return
         when (action) {
-            is UndoAction.AddStroke    -> committedStrokes.remove(action.stroke)
-            is UndoAction.EraseStrokes -> committedStrokes.addAll(action.strokes)
+            is UndoAction.AddStroke -> committedStrokes.remove(action.stroke)
+            is UndoAction.EraseStrokes -> {
+                // Re-insert strokes at their original positions.
+                // Insert in descending index order so earlier insertions don't shift later ones.
+                for ((idx, stroke) in action.entries.sortedByDescending { it.first }) {
+                    committedStrokes.add(idx.coerceIn(0, committedStrokes.size), stroke)
+                }
+            }
         }
         redrawBitmap()
         redoStack.add(action)
@@ -232,7 +263,7 @@ class DrawingCanvas(context: Context) : View(context) {
                 invalidate()
             }
             is UndoAction.EraseStrokes -> {
-                committedStrokes.removeAll(action.strokes.toSet())
+                committedStrokes.removeAll(action.entries.map { it.second }.toSet())
                 redrawBitmap()
             }
         }

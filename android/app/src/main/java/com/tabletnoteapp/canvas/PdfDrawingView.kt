@@ -125,7 +125,8 @@ class PdfDrawingView(context: Context) : View(context) {
     private val undoStack          = mutableListOf<UndoAction>()
     private val redoStack          = mutableListOf<UndoAction>()
     private var activeStroke: Stroke? = null
-    private val strokeEraserBuffer = mutableListOf<Stroke>()
+    private val strokeEraserBuffer = mutableListOf<Pair<Int, Stroke>>()
+    private var strokeOriginalIndexMap: Map<Stroke, Int> = emptyMap()
 
     var currentTool:      ToolType = ToolType.SELECT
     var penColor:         Int      = Color.BLACK
@@ -140,6 +141,19 @@ class PdfDrawingView(context: Context) : View(context) {
         style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
         xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
     }
+    private val strokeEraserFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(55, 150, 150, 150)
+    }
+    private val strokeEraserBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+        color = Color.argb(170, 90, 90, 90)
+    }
+
+    private var eraserCursorX = 0f
+    private var eraserCursorY = 0f
+    private var showEraserCursor = false
     private val pageBgPaint = Paint().apply { color = Color.WHITE }
     private val scrollbarActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(220, 120, 120, 120)
@@ -303,6 +317,15 @@ class PdfDrawingView(context: Context) : View(context) {
         // 3. Scrollbar (screen coords, outside transform)
         drawScrollbar(canvas)
 
+        // 4. Eraser cursor (screen coords, outside transform)
+        if (showEraserCursor) {
+            // pixel eraser: strokeWidth is in logical coords → screen radius = thickness * scale / 2
+            // stroke eraser: hit-test radius is already in screen px = eraserThickness
+            val r = if (eraserMode == "stroke") eraserThickness else eraserThickness * scale / 2f
+            canvas.drawCircle(eraserCursorX, eraserCursorY, r, strokeEraserFillPaint)
+            canvas.drawCircle(eraserCursorX, eraserCursorY, r, strokeEraserBorderPaint)
+        }
+
         if (!scroller.isFinished) postInvalidateOnAnimation()
     }
 
@@ -440,16 +463,21 @@ class PdfDrawingView(context: Context) : View(context) {
                     parent?.requestDisallowInterceptTouchEvent(true)
                     redoStack.clear()
                     strokeEraserBuffer.clear()
+                    strokeOriginalIndexMap = committedStrokes.mapIndexed { i, s -> s to i }.toMap()
+                    eraserCursorX = event.x; eraserCursorY = event.y; showEraserCursor = true
                     eraseStrokesAtPoint(xDoc, yDoc)
                     notifyUndoRedoState(); invalidate()
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    eraserCursorX = event.x; eraserCursorY = event.y
                     eraseStrokesAtPoint(xDoc, yDoc); invalidate()
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    showEraserCursor = false
                     if (strokeEraserBuffer.isNotEmpty()) {
                         undoStack.add(UndoAction.EraseStrokes(strokeEraserBuffer.toList()))
                         strokeEraserBuffer.clear()
+                        strokeOriginalIndexMap = emptyMap()
                     }
                     notifyUndoRedoState(); invalidate()
                 }
@@ -462,6 +490,9 @@ class PdfDrawingView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
                 redoStack.clear()
+                if (currentTool == ToolType.ERASER) {
+                    eraserCursorX = event.x; eraserCursorY = event.y; showEraserCursor = true
+                }
                 val style = StrokeStyle(
                     color     = if (currentTool == ToolType.ERASER) Color.TRANSPARENT else penColor,
                     thickness = if (currentTool == ToolType.ERASER) eraserThickness else penThickness,
@@ -471,9 +502,13 @@ class PdfDrawingView(context: Context) : View(context) {
                 notifyUndoRedoState(); invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
+                if (currentTool == ToolType.ERASER) {
+                    eraserCursorX = event.x; eraserCursorY = event.y
+                }
                 activeStroke?.addPoint(Point(xDoc, yDoc, pressure)); invalidate()
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                showEraserCursor = false
                 activeStroke?.let { s ->
                     s.addPoint(Point(xDoc, yDoc, pressure))
                     if (!s.isEmpty) {
@@ -489,14 +524,15 @@ class PdfDrawingView(context: Context) : View(context) {
     }
 
     private fun eraseStrokesAtPoint(xDoc: Float, yDoc: Float) {
-        val threshold = eraserThickness / scale   // convert screen px → logical doc coords
+        val threshold = eraserThickness / scale
         val thresholdSq = threshold * threshold
-        val toRemove = committedStrokes.filter { stroke ->
-            strokeHitsPoint(stroke, xDoc, yDoc, thresholdSq)
-        }
+        val toRemove = committedStrokes.filter { it.style.tool != ToolType.ERASER && strokeHitsPoint(it, xDoc, yDoc, thresholdSq) }
         if (toRemove.isNotEmpty()) {
             committedStrokes.removeAll(toRemove.toSet())
-            strokeEraserBuffer.addAll(toRemove)
+            toRemove.forEach { stroke ->
+                val origIdx = strokeOriginalIndexMap[stroke] ?: 0
+                strokeEraserBuffer.add(origIdx to stroke)
+            }
         }
     }
 
@@ -535,8 +571,12 @@ class PdfDrawingView(context: Context) : View(context) {
     fun undo() {
         val action = undoStack.removeLastOrNull() ?: return
         when (action) {
-            is UndoAction.AddStroke    -> committedStrokes.remove(action.stroke)
-            is UndoAction.EraseStrokes -> committedStrokes.addAll(action.strokes)
+            is UndoAction.AddStroke -> committedStrokes.remove(action.stroke)
+            is UndoAction.EraseStrokes -> {
+                for ((idx, stroke) in action.entries.sortedByDescending { it.first }) {
+                    committedStrokes.add(idx.coerceIn(0, committedStrokes.size), stroke)
+                }
+            }
         }
         redoStack.add(action)
         notifyUndoRedoState(); invalidate()
@@ -546,7 +586,7 @@ class PdfDrawingView(context: Context) : View(context) {
         val action = redoStack.removeLastOrNull() ?: return
         when (action) {
             is UndoAction.AddStroke    -> committedStrokes.add(action.stroke)
-            is UndoAction.EraseStrokes -> committedStrokes.removeAll(action.strokes.toSet())
+            is UndoAction.EraseStrokes -> committedStrokes.removeAll(action.entries.map { it.second }.toSet())
         }
         undoStack.add(action)
         notifyUndoRedoState(); invalidate()
