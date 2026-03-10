@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   SafeAreaView,
   Alert,
+  AlertButton,
   Modal,
   TextInput,
   KeyboardAvoidingView,
@@ -21,6 +22,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNotebookStore } from '../store/useNotebookStore';
 import { Note } from '../types/noteTypes';
 import { RootStackParamList } from '../navigation';
+import Sidebar from '../components/Sidebar';
 
 type HomeNav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -37,7 +39,11 @@ const uniqueTitle = (base: string, existingNotes: Note[]): string => {
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNav>();
-  const { notes, addNote, deleteNote, updateNote } = useNotebookStore();
+  const { notes, categories, addNote, deleteNote, updateNote, addCategory } = useNotebookStore();
+
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [selectedCategoryId, setSelectedCategoryId] = useState('all');
+  const [moveCategoryTarget, setMoveCategoryTarget] = useState<Note | null>(null);
 
   // Retroactively generate thumbnails for PDF notes that don't have one yet
   useEffect(() => {
@@ -56,6 +62,15 @@ export default function HomeScreen() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // run once on mount
+
+  const filteredNotes = useMemo(() => {
+    switch (selectedCategoryId) {
+      case 'all':   return notes;
+      case 'pdfs':  return notes.filter(n => n.type === 'pdf');
+      case 'notes': return notes.filter(n => n.type === 'note');
+      default:      return notes.filter(n => n.categoryId === selectedCategoryId);
+    }
+  }, [notes, selectedCategoryId]);
 
   const openNote = (note: Note) => {
     if (note.type === 'pdf') {
@@ -124,7 +139,7 @@ export default function HomeScreen() {
   const [renameText, setRenameText] = useState('');
 
   const onLongPress = (note: Note) => {
-    Alert.alert(note.title, undefined, [
+    const actions: AlertButton[] = [
       { text: 'Rename', onPress: () => { setRenameText(note.title); setRenameTarget({ id: note.id, title: note.title }); } },
       { text: 'Delete', style: 'destructive', onPress: () =>
         Alert.alert('Delete', `Delete "${note.title}"?`, [
@@ -132,8 +147,14 @@ export default function HomeScreen() {
           { text: 'Delete', style: 'destructive', onPress: () => deleteNote(note.id) },
         ])
       },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    ];
+
+    if (categories.length > 0) {
+      actions.splice(1, 0, { text: 'Move to Category', onPress: () => setMoveCategoryTarget(note) });
+    }
+
+    actions.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert(note.title, undefined, actions);
   };
 
   const confirmRename = () => {
@@ -145,59 +166,80 @@ export default function HomeScreen() {
     setRenameTarget(null);
   };
 
+  const isEmptyCategory = selectedCategoryId !== 'all';
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>My Notes</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity style={styles.importButton} onPress={importPdf}>
-            <Text style={styles.importButtonText}>Import PDF</Text>
+      <View style={styles.row}>
+        {/* Sidebar — flex child, pushes content right when open */}
+        <Sidebar
+          open={sidebarOpen}
+          categories={categories}
+          selectedCategoryId={selectedCategoryId}
+          onSelectCategory={setSelectedCategoryId}
+          onAddCategory={addCategory}
+          onClose={() => setSidebarOpen(false)}
+        />
+
+        {/* Main content */}
+        <View style={{ flex: 1 }}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.menuBtn} onPress={() => setSidebarOpen(o => !o)}>
+            <Text style={styles.menuIcon}>≡</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.newButton} onPress={createNote}>
-            <Text style={styles.newButtonText}>+ New</Text>
-          </TouchableOpacity>
+          <Text style={styles.title}>My Notes</Text>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity style={styles.importButton} onPress={importPdf}>
+              <Text style={styles.importButtonText}>Import PDF</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.newButton} onPress={createNote}>
+              <Text style={styles.newButtonText}>+ New</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {filteredNotes.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>{isEmptyCategory ? 'No notes in this category.' : 'No notes yet.'}</Text>
+            {!isEmptyCategory && <Text style={styles.emptySubText}>Tap "+ New" to create one.</Text>}
+          </View>
+        ) : (
+          <FlatList
+            data={filteredNotes}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.list}
+            numColumns={3}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => openNote(item)}
+                onLongPress={() => onLongPress(item)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.cardThumbnail}>
+                  {item.thumbnailUri && (
+                    <Image
+                      source={{ uri: `file://${item.thumbnailUri}` }}
+                      style={styles.cardThumbnailImage}
+                      resizeMode="cover"
+                    />
+                  )}
+                  {item.type === 'pdf' && (
+                    <View style={styles.pdfBadge}>
+                      <Text style={styles.pdfBadgeText}>PDF</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+                <Text style={styles.cardDate}>{formatDate(item.updatedAt)}</Text>
+              </TouchableOpacity>
+            )}
+          />
+        )}
         </View>
       </View>
 
-      {notes.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyText}>No notes yet.</Text>
-          <Text style={styles.emptySubText}>Tap "+ New" to create one.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={notes}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.list}
-          numColumns={3}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => openNote(item)}
-              onLongPress={() => onLongPress(item)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.cardThumbnail}>
-                {item.thumbnailUri && (
-                  <Image
-                    source={{ uri: `file://${item.thumbnailUri}` }}
-                    style={styles.cardThumbnailImage}
-                    resizeMode="cover"
-                  />
-                )}
-                {item.type === 'pdf' && (
-                  <View style={styles.pdfBadge}>
-                    <Text style={styles.pdfBadgeText}>PDF</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-              <Text style={styles.cardDate}>{formatDate(item.updatedAt)}</Text>
-            </TouchableOpacity>
-          )}
-        />
-      )}
-
+      {/* Rename Modal */}
       <Modal visible={!!renameTarget} transparent animationType="fade" onRequestClose={() => setRenameTarget(null)}>
         <KeyboardAvoidingView style={renameStyles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setRenameTarget(null)} />
@@ -225,6 +267,32 @@ export default function HomeScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Move to Category Modal */}
+      <Modal visible={!!moveCategoryTarget} transparent animationType="fade" onRequestClose={() => setMoveCategoryTarget(null)}>
+        <TouchableOpacity style={moveCatStyles.overlay} activeOpacity={1} onPress={() => setMoveCategoryTarget(null)}>
+          <View style={moveCatStyles.box}>
+            <Text style={moveCatStyles.title}>Move to Category</Text>
+            {categories.map(cat => (
+              <TouchableOpacity
+                key={cat.id}
+                style={moveCatStyles.row}
+                onPress={() => {
+                  if (moveCategoryTarget) {
+                    updateNote(moveCategoryTarget.id, { categoryId: cat.id });
+                  }
+                  setMoveCategoryTarget(null);
+                }}
+              >
+                <Text style={moveCatStyles.rowText}>{cat.name}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={moveCatStyles.cancelRow} onPress={() => setMoveCategoryTarget(null)}>
+              <Text style={moveCatStyles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -241,25 +309,51 @@ const renameStyles = StyleSheet.create({
   confirmText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
 });
 
+const moveCatStyles = StyleSheet.create({
+  overlay:   { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
+  box:       { backgroundColor: '#FFF', borderRadius: 14, padding: 8, width: 280 },
+  title:     { fontSize: 15, fontWeight: '600', color: '#1A1A1A', padding: 16, paddingBottom: 8 },
+  row:       { paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8 },
+  rowText:   { fontSize: 15, color: '#1A1A1A' },
+  cancelRow: { paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#E0E0D8', marginTop: 4 },
+  cancelText: { fontSize: 15, color: '#888', textAlign: 'center' },
+});
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F0',
   },
+  row: {
+    flex: 1,
+    flexDirection: 'row',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#E0E0D8',
     backgroundColor: '#FFFFFF',
   },
+  menuBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  menuIcon: {
+    fontSize: 22,
+    color: '#1A1A1A',
+  },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: '#1A1A1A',
+    flex: 1,
   },
   headerButtons: {
     flexDirection: 'row',

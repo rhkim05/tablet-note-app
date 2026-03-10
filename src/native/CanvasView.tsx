@@ -10,6 +10,7 @@ interface CanvasViewProps {
   penThickness: number;
   eraserThickness: number;
   style?: StyleProp<ViewStyle>;
+  onLayout?: () => void;
 }
 
 const NativeCanvasView = requireNativeComponent<CanvasViewProps>('CanvasView');
