@@ -175,26 +175,6 @@ Both `NoteEditorScreen` and `PdfViewerScreen` use the same pattern:
 - `@react-navigation/native@6.x` + `@react-navigation/native-stack@6.x` (v7 requires screens 4.x)
 - `@react-native-async-storage/async-storage@1.23.1` (v2+ requires Kotlin 2.1.0 via KSP; project uses Kotlin 1.8.0)
 
-### Environment Variables
-
-Secrets are stored in `.env` (gitignored). Copy `.env.example` to `.env` and fill in the values:
-
-```bash
-cp .env.example .env
-```
-
-Current variables:
-- `GOOGLE_WEB_CLIENT_ID` — Web OAuth 2.0 Client ID from Google Cloud Console (used by `react-native-config` in `LoginScreen.tsx`)
-
-**New team member setup for Google Sign-In:**
-1. Copy `.env.example` → `.env` and paste the shared `GOOGLE_WEB_CLIENT_ID`
-2. Generate your debug keystore SHA-1 and add it as an Android OAuth Client ID in Google Cloud Console (same project, same client ID entry — add a new SHA-1):
-   ```bash
-   keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-   keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
-   ```
-3. Run a full rebuild: `npx react-native run-android`
-
 ### Git / GitHub
 
 `android/app/build/` and `android/local.properties` are gitignored — never commit them. The debug APK is 164MB and will be rejected by GitHub.

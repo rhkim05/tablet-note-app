@@ -10,14 +10,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { Category, BUILT_IN_CATEGORIES } from '../types/categoryTypes';
-import { useAuthStore } from '../store/useAuthStore';
-import { RootStackParamList } from '../navigation';
 
 const EXPANDED_W = 240;
 
@@ -34,8 +28,6 @@ export default function Sidebar({ open, categories, selectedCategoryId, onSelect
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const widthAnim = useRef(new Animated.Value(0)).current;
-  const { user, clearUser } = useAuthStore();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   useEffect(() => {
     Animated.timing(widthAnim, {
@@ -52,31 +44,10 @@ export default function Sidebar({ open, categories, selectedCategoryId, onSelect
 
   const confirmAddCategory = () => {
     const trimmed = newCategoryName.trim();
-    if (trimmed) {
-      onAddCategory(trimmed);
-    }
+    if (trimmed) onAddCategory(trimmed);
     setNewCategoryName('');
     setAddModalVisible(false);
   };
-
-  const handleSignOut = () => {
-    Alert.alert('Sign out', 'Sign out of your Google account?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign Out',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await GoogleSignin.signOut();
-          } catch { /* ignore */ }
-          clearUser();
-          navigation.replace('Login');
-        },
-      },
-    ]);
-  };
-
-  const userInitial = user?.name ? user.name.charAt(0).toUpperCase() : '?';
 
   const allCategories: Category[] = [...BUILT_IN_CATEGORIES, ...categories];
 
@@ -117,15 +88,15 @@ export default function Sidebar({ open, categories, selectedCategoryId, onSelect
           <Text style={styles.addCategoryText}>+ Add Category</Text>
         </TouchableOpacity>
 
-        {/* Account row */}
-        <TouchableOpacity style={styles.accountRow} onPress={handleSignOut}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{userInitial}</Text>
-          </View>
-          <Text style={styles.accountName} numberOfLines={1}>
-            {user?.name ?? user?.email ?? 'Account'}
-          </Text>
-        </TouchableOpacity>
+        {/* Settings and Account icon stubs */}
+        <View style={styles.iconRow}>
+          <TouchableOpacity style={styles.iconBtn}>
+            <Text style={styles.iconText}>⚙</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn}>
+            <Text style={styles.iconText}>👤</Text>
+          </TouchableOpacity>
+        </View>
       </Animated.View>
 
       {/* Add Category Modal */}
@@ -227,33 +198,21 @@ const styles = StyleSheet.create({
     color: '#555',
     fontWeight: '500',
   },
-  accountRow: {
+  iconRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
     paddingBottom: 16,
-    gap: 10,
+    gap: 4,
   },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#1A1A1A',
+  iconBtn: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
   },
-  avatarText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  accountName: {
-    flex: 1,
-    fontSize: 13,
+  iconText: {
+    fontSize: 18,
     color: '#555',
-    fontWeight: '500',
   },
 });
 
