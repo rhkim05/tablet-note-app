@@ -98,8 +98,9 @@ tablet-note-app/
     │   ├── PdfViewerScreen.tsx    # PDF viewer + canvas overlay
     │   └── NoteEditorScreen.tsx   # Blank drawing canvas screen
     ├── store/
-    │   ├── useNotebookStore.ts    # Notes list with AsyncStorage persistence
+    │   ├── useNotebookStore.ts    # Notes list + categories with AsyncStorage persistence
     │   ├── useToolStore.ts        # Active tool state (pen/eraser/select), undo/redo, color/thickness
+    │   ├── useSettingsStore.ts    # S-Pen button action mapping, persisted via AsyncStorage
     │   └── useEditorStore.ts      # (stub) Current page, zoom
     ├── navigation/
     │   └── index.tsx              # NavigationContainer + RootStackParamList
@@ -110,12 +111,14 @@ tablet-note-app/
     │   ├── PdfCanvasModule.ts     # undo/redo/clear/getStrokes/loadStrokes/scrollToPage
     │   └── ColorGradientView.tsx  # Native HSV gradient picker with batched event coalescing
     ├── components/
+    │   ├── Sidebar.tsx            # Collapsible left sidebar: categories, settings modal, S-Pen action mapping
     │   ├── Toolbar.tsx            # Full toolbar: tool switching, undo/redo, color/thickness
     │   ├── ColorPickerPanel.tsx   # HSV color picker using ColorGradientView + preset swatches
     │   ├── ThicknessSlider.tsx    # PanResponder-based slider for pen/eraser thickness
     │   └── ThumbnailStrip.tsx     # PDF page thumbnail strip using react-native-pdf-thumbnail
     └── types/
-        ├── noteTypes.ts           # Note, NoteType
+        ├── noteTypes.ts           # Note, NoteType (includes optional categoryId, drawingUri)
+        ├── categoryTypes.ts       # Category interface + BUILT_IN_CATEGORIES (all/pdfs/notes)
         └── canvasTypes.ts         # PenColor, ToolMode, StrokeStyle
 ```
 
@@ -162,8 +165,14 @@ Both `NoteEditorScreen` and `PdfViewerScreen` use the same pattern:
 
 ### State Management
 
-- **`useNotebookStore`** — persists `Note[]` via zustand `persist` + AsyncStorage (key: `notebook-store`). `Note` type in `src/types/noteTypes.ts` includes optional `drawingUri`.
+- **`useNotebookStore`** — persists `Note[]` + `Category[]` via zustand `persist` + AsyncStorage (key: `notebook-store`). `Note` includes optional `drawingUri` and `categoryId`. `Category` defined in `src/types/categoryTypes.ts`; built-in categories (`all`, `pdfs`, `notes`) are defined as constants and merged with user-created ones at render time.
 - **`useToolStore`** — in-memory only. Holds `activeTool` (pen/eraser/select), `canUndo`, `canRedo`, `penColor`, `penThickness`, `eraserThickness`, `presetColors`. Updated by native view `DeviceEventEmitter` listeners.
+- **`useSettingsStore`** — persists S-Pen button action mapping via AsyncStorage (key: `settings-store`). `PenAction` type: `'none' | 'togglePenEraser' | 'eraser' | 'pen' | 'undo'`. Two mappings: `penButtonAction` (single press, default `togglePenEraser`) and `penButtonDoubleAction` (double press, default `undo`).
+
+### Sidebar & S-Pen Button
+
+- **`Sidebar.tsx`** — push-content (not overlay) flex child. Width animates 0 → 240px via `Animated.Value`; the toggle `≡` button lives in `HomeScreen`'s header outside the sidebar. Contains the settings modal (pen/eraser thickness, S-Pen action mapping, preset color swatches, clear-all).
+- **S-Pen flow**: `MainActivity.kt` overrides `onKeyDown` to catch `KEYCODE_STYLUS_BUTTON_PRIMARY` (257) and emit `spenButtonPress` via `DeviceEventEmitter`. `App.tsx` subscribes and reads `penButtonAction` from `useSettingsStore` to execute the mapped action against `useToolStore`. `undo` action is a no-op at the `App.tsx` level (requires an active canvas ref inside the editor screen).
 
 ### Known Dependency Quirks
 
@@ -174,6 +183,7 @@ Both `NoteEditorScreen` and `PdfViewerScreen` use the same pattern:
 - `react-native-blob-util@0.19.11` (0.21+ breaks)
 - `@react-navigation/native@6.x` + `@react-navigation/native-stack@6.x` (v7 requires screens 4.x)
 - `@react-native-async-storage/async-storage@1.23.1` (v2+ requires Kotlin 2.1.0 via KSP; project uses Kotlin 1.8.0)
+- `react-native-gesture-handler@~2.14.0` + `react-native-reanimated@~3.6.0` (required by navigation; do not upgrade independently)
 
 ### Git / GitHub
 
