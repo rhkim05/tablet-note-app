@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,11 +8,11 @@ import {
   StyleSheet,
   SafeAreaView,
   Alert,
-  AlertButton,
   Modal,
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Dimensions,
 } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
@@ -23,8 +23,12 @@ import { useNotebookStore } from '../store/useNotebookStore';
 import { Note } from '../types/noteTypes';
 import { RootStackParamList } from '../navigation';
 import Sidebar from '../components/Sidebar';
+import { useTheme } from '../styles/theme';
 
 type HomeNav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
+
+const POPUP_W = 180;
+const screenWidth = Dimensions.get('window').width;
 
 const formatDate = (ts: number) =>
   new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -40,10 +44,14 @@ const uniqueTitle = (base: string, existingNotes: Note[]): string => {
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNav>();
   const { notes, categories, addNote, deleteNote, updateNote, addCategory } = useNotebookStore();
+  const theme = useTheme();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedCategoryId, setSelectedCategoryId] = useState('all');
   const [moveCategoryTarget, setMoveCategoryTarget] = useState<Note | null>(null);
+  const [popupNote, setPopupNote] = useState<Note | null>(null);
+  const [popupPos, setPopupPos] = useState({ x: 0, y: 0 });
+  const optBtnRefs = useRef<Record<string, any>>({});
 
   // Retroactively generate thumbnails for PDF notes that don't have one yet
   useEffect(() => {
@@ -65,10 +73,11 @@ export default function HomeScreen() {
 
   const filteredNotes = useMemo(() => {
     switch (selectedCategoryId) {
-      case 'all':   return notes;
-      case 'pdfs':  return notes.filter(n => n.type === 'pdf');
-      case 'notes': return notes.filter(n => n.type === 'note');
-      default:      return notes.filter(n => n.categoryId === selectedCategoryId);
+      case 'all':       return notes;
+      case 'favorites': return notes.filter(n => n.isFavorite);
+      case 'pdfs':      return notes.filter(n => n.type === 'pdf');
+      case 'notes':     return notes.filter(n => n.type === 'note');
+      default:          return notes.filter(n => n.categoryId === selectedCategoryId);
     }
   }, [notes, selectedCategoryId]);
 
@@ -138,25 +147,6 @@ export default function HomeScreen() {
   const [renameTarget, setRenameTarget] = useState<{ id: string; title: string } | null>(null);
   const [renameText, setRenameText] = useState('');
 
-  const onLongPress = (note: Note) => {
-    const actions: AlertButton[] = [
-      { text: 'Rename', onPress: () => { setRenameText(note.title); setRenameTarget({ id: note.id, title: note.title }); } },
-      { text: 'Delete', style: 'destructive', onPress: () =>
-        Alert.alert('Delete', `Delete "${note.title}"?`, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: () => deleteNote(note.id) },
-        ])
-      },
-    ];
-
-    if (categories.length > 0) {
-      actions.splice(1, 0, { text: 'Move to Category', onPress: () => setMoveCategoryTarget(note) });
-    }
-
-    actions.push({ text: 'Cancel', style: 'cancel' });
-    Alert.alert(note.title, undefined, actions);
-  };
-
   const confirmRename = () => {
     if (!renameTarget) return;
     const trimmed = renameText.trim();
@@ -169,7 +159,7 @@ export default function HomeScreen() {
   const isEmptyCategory = selectedCategoryId !== 'all';
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
       <View style={styles.row}>
         {/* Sidebar — flex child, pushes content right when open */}
         <Sidebar
@@ -183,25 +173,25 @@ export default function HomeScreen() {
 
         {/* Main content */}
         <View style={{ flex: 1 }}>
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
           <TouchableOpacity style={styles.menuBtn} onPress={() => setSidebarOpen(o => !o)}>
-            <Text style={styles.menuIcon}>≡</Text>
+            <Text style={[styles.menuIcon, { color: theme.text }]}>≡</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>My Notes</Text>
+          <Text style={[styles.title, { color: theme.text }]}>My Notes</Text>
           <View style={styles.headerButtons}>
-            <TouchableOpacity style={styles.importButton} onPress={importPdf}>
-              <Text style={styles.importButtonText}>Import PDF</Text>
+            <TouchableOpacity style={[styles.importButton, { backgroundColor: theme.surface, borderColor: theme.text }]} onPress={importPdf}>
+              <Text style={[styles.importButtonText, { color: theme.text }]}>Import PDF</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.newButton} onPress={createNote}>
-              <Text style={styles.newButtonText}>+ New</Text>
+            <TouchableOpacity style={[styles.newButton, { backgroundColor: theme.text }]} onPress={createNote}>
+              <Text style={[styles.newButtonText, { color: theme.surface }]}>+ New</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {filteredNotes.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>{isEmptyCategory ? 'No notes in this category.' : 'No notes yet.'}</Text>
-            {!isEmptyCategory && <Text style={styles.emptySubText}>Tap "+ New" to create one.</Text>}
+            <Text style={[styles.emptyText, { color: theme.textSub }]}>{isEmptyCategory ? 'No notes in this category.' : 'No notes yet.'}</Text>
+            {!isEmptyCategory && <Text style={[styles.emptySubText, { color: theme.textHint }]}>Tap "+ New" to create one.</Text>}
           </View>
         ) : (
           <FlatList
@@ -211,12 +201,11 @@ export default function HomeScreen() {
             numColumns={3}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={styles.card}
+                style={[styles.card, { backgroundColor: theme.surface }]}
                 onPress={() => openNote(item)}
-                onLongPress={() => onLongPress(item)}
                 activeOpacity={0.7}
               >
-                <View style={styles.cardThumbnail}>
+                <View style={[styles.cardThumbnail, { backgroundColor: theme.surfaceAlt }]}>
                   {item.thumbnailUri && (
                     <Image
                       source={{ uri: `file://${item.thumbnailUri}` }}
@@ -230,8 +219,33 @@ export default function HomeScreen() {
                     </View>
                   )}
                 </View>
-                <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-                <Text style={styles.cardDate}>{formatDate(item.updatedAt)}</Text>
+                <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={2}>{item.title}</Text>
+                <Text style={[styles.cardDate, { color: theme.textHint }]}>{formatDate(item.updatedAt)}</Text>
+                {/* Favorite button — top-left */}
+                <TouchableOpacity
+                  style={styles.favoriteBtn}
+                  onPress={() => updateNote(item.id, { isFavorite: !item.isFavorite })}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Text style={styles.favoriteBtnText}>{item.isFavorite ? '★' : '☆'}</Text>
+                </TouchableOpacity>
+
+                {/* Options button — top-right */}
+                <TouchableOpacity
+                  ref={(r) => { optBtnRefs.current[item.id] = r; }}
+                  style={styles.optionsBtn}
+                  onPress={() => {
+                    optBtnRefs.current[item.id]?.measureInWindow(
+                      (x: number, y: number, w: number, h: number) => {
+                        setPopupPos({ x: x + w, y: y + h + 4 });
+                        setPopupNote(item);
+                      }
+                    );
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                >
+                  <Text style={[styles.optionsBtnText, { color: theme.textSub }]}>⋮</Text>
+                </TouchableOpacity>
               </TouchableOpacity>
             )}
           />
@@ -241,12 +255,12 @@ export default function HomeScreen() {
 
       {/* Rename Modal */}
       <Modal visible={!!renameTarget} transparent animationType="fade" onRequestClose={() => setRenameTarget(null)}>
-        <KeyboardAvoidingView style={renameStyles.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={[renameStyles.overlay, { backgroundColor: theme.overlay }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setRenameTarget(null)} />
-          <View style={renameStyles.box}>
-            <Text style={renameStyles.title}>Rename</Text>
+          <View style={[renameStyles.box, { backgroundColor: theme.surface }]}>
+            <Text style={[renameStyles.title, { color: theme.text }]}>Rename</Text>
             <TextInput
-              style={renameStyles.input}
+              style={[renameStyles.input, { borderColor: theme.border, color: theme.text, backgroundColor: theme.surfaceAlt }]}
               value={renameText}
               onChangeText={setRenameText}
               onSubmitEditing={confirmRename}
@@ -255,13 +269,14 @@ export default function HomeScreen() {
               autoCorrect={false}
               autoCapitalize="none"
               keyboardType="default"
+              placeholderTextColor={theme.textHint}
             />
             <View style={renameStyles.buttons}>
-              <TouchableOpacity style={renameStyles.cancel} onPress={() => setRenameTarget(null)}>
-                <Text style={renameStyles.cancelText}>Cancel</Text>
+              <TouchableOpacity style={[renameStyles.cancel, { backgroundColor: theme.surfaceAlt }]} onPress={() => setRenameTarget(null)}>
+                <Text style={[renameStyles.cancelText, { color: theme.textSub }]}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={renameStyles.confirm} onPress={confirmRename}>
-                <Text style={renameStyles.confirmText}>Confirm</Text>
+              <TouchableOpacity style={[renameStyles.confirm, { backgroundColor: theme.text }]} onPress={confirmRename}>
+                <Text style={[renameStyles.confirmText, { color: theme.surface }]}>Confirm</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -270,9 +285,9 @@ export default function HomeScreen() {
 
       {/* Move to Category Modal */}
       <Modal visible={!!moveCategoryTarget} transparent animationType="fade" onRequestClose={() => setMoveCategoryTarget(null)}>
-        <TouchableOpacity style={moveCatStyles.overlay} activeOpacity={1} onPress={() => setMoveCategoryTarget(null)}>
-          <View style={moveCatStyles.box}>
-            <Text style={moveCatStyles.title}>Move to Category</Text>
+        <TouchableOpacity style={[moveCatStyles.overlay, { backgroundColor: theme.overlay }]} activeOpacity={1} onPress={() => setMoveCategoryTarget(null)}>
+          <View style={[moveCatStyles.box, { backgroundColor: theme.surface }]}>
+            <Text style={[moveCatStyles.title, { color: theme.text }]}>Move to Category</Text>
             {categories.map(cat => (
               <TouchableOpacity
                 key={cat.id}
@@ -284,45 +299,131 @@ export default function HomeScreen() {
                   setMoveCategoryTarget(null);
                 }}
               >
-                <Text style={moveCatStyles.rowText}>{cat.name}</Text>
+                <Text style={[moveCatStyles.rowText, { color: theme.text }]}>{cat.name}</Text>
               </TouchableOpacity>
             ))}
-            <TouchableOpacity style={moveCatStyles.cancelRow} onPress={() => setMoveCategoryTarget(null)}>
-              <Text style={moveCatStyles.cancelText}>Cancel</Text>
+            <TouchableOpacity style={[moveCatStyles.cancelRow, { borderTopColor: theme.border }]} onPress={() => setMoveCategoryTarget(null)}>
+              <Text style={[moveCatStyles.cancelText, { color: theme.textSub }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* Note options popup */}
+      <Modal
+        visible={!!popupNote}
+        transparent
+        animationType="none"
+        onRequestClose={() => setPopupNote(null)}
+      >
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={() => setPopupNote(null)}
+        />
+        <View style={[
+          popupStyles.box,
+          {
+            backgroundColor: theme.surface,
+            borderColor: theme.border,
+            top: popupPos.y,
+            left: Math.min(popupPos.x - POPUP_W, screenWidth - POPUP_W - 8),
+          },
+        ]}>
+          <TouchableOpacity
+            style={popupStyles.row}
+            onPress={() => {
+              const note = popupNote!;
+              setPopupNote(null);
+              setRenameText(note.title);
+              setRenameTarget({ id: note.id, title: note.title });
+            }}
+          >
+            <Text style={[popupStyles.rowText, { color: theme.text }]}>Rename</Text>
+          </TouchableOpacity>
+
+          {categories.length > 0 && (
+            <>
+              <View style={[popupStyles.sep, { backgroundColor: theme.border }]} />
+              <TouchableOpacity
+                style={popupStyles.row}
+                onPress={() => { const note = popupNote!; setPopupNote(null); setMoveCategoryTarget(note); }}
+              >
+                <Text style={[popupStyles.rowText, { color: theme.text }]}>Move to Category</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          <View style={[popupStyles.sep, { backgroundColor: theme.border }]} />
+          <TouchableOpacity
+            style={popupStyles.row}
+            onPress={() => {
+              const note = popupNote!;
+              setPopupNote(null);
+              Alert.alert('Delete', `Delete "${note.title}"?`, [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => deleteNote(note.id) },
+              ]);
+            }}
+          >
+            <Text style={[popupStyles.rowText, { color: theme.destructive }]}>Delete</Text>
+          </TouchableOpacity>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const renameStyles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
-  box:     { backgroundColor: '#FFF', borderRadius: 14, padding: 24, width: 300 },
-  title:   { fontSize: 16, fontWeight: '600', color: '#1A1A1A', marginBottom: 14 },
-  input:   { borderWidth: 1, borderColor: '#DDD', borderRadius: 8, padding: 10, fontSize: 15, color: '#1A1A1A', marginBottom: 18 },
+  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  box:     { borderRadius: 14, padding: 24, width: 300 },
+  title:   { fontSize: 16, fontWeight: '600', marginBottom: 14 },
+  input:   { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 15, marginBottom: 18 },
   buttons: { flexDirection: 'row', gap: 10 },
-  cancel:  { flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: '#F0F0EA', alignItems: 'center' },
-  cancelText:  { color: '#555', fontSize: 15 },
-  confirm: { flex: 1, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1A1A1A', alignItems: 'center' },
-  confirmText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
+  cancel:  { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  cancelText:  { fontSize: 15 },
+  confirm: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
+  confirmText: { fontSize: 15, fontWeight: '600' },
 });
 
 const moveCatStyles = StyleSheet.create({
-  overlay:   { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.45)' },
-  box:       { backgroundColor: '#FFF', borderRadius: 14, padding: 8, width: 280 },
-  title:     { fontSize: 15, fontWeight: '600', color: '#1A1A1A', padding: 16, paddingBottom: 8 },
+  overlay:   { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  box:       { borderRadius: 14, padding: 8, width: 280 },
+  title:     { fontSize: 15, fontWeight: '600', padding: 16, paddingBottom: 8 },
   row:       { paddingHorizontal: 16, paddingVertical: 14, borderRadius: 8 },
-  rowText:   { fontSize: 15, color: '#1A1A1A' },
-  cancelRow: { paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#E0E0D8', marginTop: 4 },
-  cancelText: { fontSize: 15, color: '#888', textAlign: 'center' },
+  rowText:   { fontSize: 15 },
+  cancelRow: { paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, marginTop: 4 },
+  cancelText: { fontSize: 15, textAlign: 'center' },
+});
+
+const popupStyles = StyleSheet.create({
+  box: {
+    position: 'absolute',
+    width: POPUP_W,
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+  },
+  row: {
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  rowText: {
+    fontSize: 15,
+  },
+  sep: {
+    height: 1,
+  },
 });
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F0',
   },
   row: {
     flex: 1,
@@ -335,8 +436,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0D8',
-    backgroundColor: '#FFFFFF',
   },
   menuBtn: {
     width: 36,
@@ -347,12 +446,10 @@ const styles = StyleSheet.create({
   },
   menuIcon: {
     fontSize: 22,
-    color: '#1A1A1A',
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#1A1A1A',
     flex: 1,
   },
   headerButtons: {
@@ -360,26 +457,21 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   importButton: {
-    backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: '#1A1A1A',
   },
   importButtonText: {
-    color: '#1A1A1A',
     fontSize: 16,
     fontWeight: '600',
   },
   newButton: {
-    backgroundColor: '#1A1A1A',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 10,
   },
   newButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -390,7 +482,6 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     margin: 8,
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     padding: 12,
     shadowColor: '#000',
@@ -401,7 +492,6 @@ const styles = StyleSheet.create({
   },
   cardThumbnail: {
     height: 140,
-    backgroundColor: '#F0F0EB',
     borderRadius: 8,
     marginBottom: 10,
     position: 'relative',
@@ -428,12 +518,39 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1A1A1A',
     marginBottom: 4,
   },
   cardDate: {
     fontSize: 12,
-    color: '#999',
+  },
+  favoriteBtn: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  favoriteBtnText: {
+    fontSize: 16,
+    color: '#F5A623',
+  },
+  optionsBtn: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  optionsBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 18,
   },
   empty: {
     flex: 1,
@@ -443,11 +560,9 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#555',
   },
   emptySubText: {
     fontSize: 15,
-    color: '#AAA',
     marginTop: 6,
   },
 });

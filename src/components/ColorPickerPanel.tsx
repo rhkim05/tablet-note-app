@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import ColorGradientView from '../native/ColorGradientView';
+import { useTheme } from '../styles/theme';
 
 // ── Color math ────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ interface Props {
 }
 
 export default function ColorPickerPanel({ color, presetColors, onColorChange, onPresetSave }: Props) {
+  const theme = useTheme();
   const [hsv, setHsv] = useState<[number, number, number]>(() =>
     hexToHsv(color.length === 7 ? color : '#000000')
   );
@@ -62,7 +64,7 @@ export default function ColorPickerPanel({ color, presetColors, onColorChange, o
   const currentHex = hsvToHex(h, s, v).toUpperCase();
 
   return (
-    <View style={styles.panel}>
+    <View style={[styles.panel, { backgroundColor: theme.surfaceAlt }]}>
       {/* Native gradient view — smooth, zero React overhead during touch */}
       <ColorGradientView
         hue={h}
@@ -73,14 +75,14 @@ export default function ColorPickerPanel({ color, presetColors, onColorChange, o
         onHueChange={(nh) => apply(nh, s, v)}
       />
 
-      <View style={styles.sep} />
+      <View style={[styles.sep, { backgroundColor: theme.border }]} />
 
       {/* Preset swatches 5 × 2 */}
       <View style={styles.presets}>
         {presetColors.map((c, i) => (
           <TouchableOpacity
             key={i}
-            style={[styles.swatch, { backgroundColor: c },
+            style={[styles.swatch, { backgroundColor: c, borderColor: theme.border },
               c.toUpperCase() === currentHex && styles.swatchActive]}
             onPress={() => { const [ph, ps, pv] = hexToHsv(c); apply(ph, ps, pv); }}
             onLongPress={() => onPresetSave(i, currentHex)}
@@ -88,13 +90,13 @@ export default function ColorPickerPanel({ color, presetColors, onColorChange, o
         ))}
       </View>
 
-      <View style={styles.sep} />
+      <View style={[styles.sep, { backgroundColor: theme.border }]} />
 
       {/* Preview */}
       <View style={styles.preview}>
-        <View style={[styles.previewSwatch, { backgroundColor: currentHex }]} />
-        <Text style={styles.hex}>{currentHex}</Text>
-        <Text style={styles.hint}>long-press preset to save</Text>
+        <View style={[styles.previewSwatch, { backgroundColor: currentHex, borderColor: theme.border }]} />
+        <Text style={[styles.hex, { color: theme.text }]}>{currentHex}</Text>
+        <Text style={[styles.hint, { color: theme.textHint }]}>long-press preset to save</Text>
       </View>
     </View>
   );

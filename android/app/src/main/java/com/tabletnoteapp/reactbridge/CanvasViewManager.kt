@@ -27,6 +27,10 @@ class CanvasViewManager : SimpleViewManager<DrawingCanvas>() {
                     putBoolean("canRedo", canRedo)
                 })
         }
+        canvas.onEraserLift = {
+            context.getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("canvasEraserLift", null)
+        }
         return canvas
     }
 

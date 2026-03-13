@@ -45,6 +45,7 @@ class DrawingCanvas(context: Context) : View(context) {
     // ── Callbacks ─────────────────────────────────────────────────────────
 
     var onUndoRedoStateChanged: ((canUndo: Boolean, canRedo: Boolean) -> Unit)? = null
+    var onEraserLift: (() -> Unit)? = null
 
     // ── Rendering ────────────────────────────────────────────────────────────
 
@@ -91,14 +92,25 @@ class DrawingCanvas(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+
+        // Use saveLayer when the active stroke is a pixel eraser so PorterDuff.CLEAR only
+        // clears within the layer — transparent holes then reveal the white view background
+        // (from super.onDraw) rather than punching through to the dark parent in dark mode.
+        val isEraserActive = activeStroke?.style?.tool == ToolType.ERASER
+        val layerSave = if (isEraserActive) canvas.saveLayer(null, null) else -1
+
         bitmap?.let { canvas.drawBitmap(it, 0f, 0f, null) }
         activeStroke?.let { stroke ->
             val path = BezierSmoother.buildPath(stroke.points) ?: return@let
             canvas.drawPath(path, paintForStroke(stroke))
         }
+
+        if (layerSave != -1) canvas.restoreToCount(layerSave)
+
         if (showEraserCursor) {
-            canvas.drawCircle(eraserCursorX, eraserCursorY, eraserThickness, strokeEraserFillPaint)
-            canvas.drawCircle(eraserCursorX, eraserCursorY, eraserThickness, strokeEraserBorderPaint)
+            val r = if (eraserMode == "stroke") eraserThickness else eraserThickness / 2f
+            canvas.drawCircle(eraserCursorX, eraserCursorY, r, strokeEraserFillPaint)
+            canvas.drawCircle(eraserCursorX, eraserCursorY, r, strokeEraserBorderPaint)
         }
     }
 
@@ -143,6 +155,7 @@ class DrawingCanvas(context: Context) : View(context) {
                         strokeOriginalIndexMap = emptyMap()
                     }
                     notifyUndoRedoState()
+                    onEraserLift?.invoke()
                     invalidate()
                 }
             }
@@ -154,6 +167,9 @@ class DrawingCanvas(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
                 redoStack.clear()
+                if (currentTool == ToolType.ERASER) {
+                    eraserCursorX = x; eraserCursorY = y; showEraserCursor = true
+                }
                 val style = StrokeStyle(
                     color     = if (currentTool == ToolType.ERASER) Color.TRANSPARENT else penColor,
                     thickness = if (currentTool == ToolType.ERASER) eraserThickness else penThickness,
@@ -166,17 +182,22 @@ class DrawingCanvas(context: Context) : View(context) {
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
+                if (currentTool == ToolType.ERASER) {
+                    eraserCursorX = x; eraserCursorY = y
+                }
                 activeStroke?.let { stroke ->
                     stroke.addPoint(Point(x, y, pressure))
                     invalidate()
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                showEraserCursor = false
                 activeStroke?.let { stroke ->
                     stroke.addPoint(Point(x, y, pressure))
                     commitStroke(stroke)
                     activeStroke = null
                     notifyUndoRedoState()
+                    if (currentTool == ToolType.ERASER) onEraserLift?.invoke()
                 }
             }
         }

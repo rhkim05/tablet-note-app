@@ -78,6 +78,8 @@ tablet-note-app/
 │   ├── gradle.properties          # JDK 17 path, Hermes, new arch flags
 │   └── app/
 │       └── src/main/java/com/tabletnoteapp/
+│           ├── MainActivity.kt            # S-Pen button key intercept (KEYCODE_STYLUS_BUTTON_PRIMARY)
+│           ├── MainApplication.kt         # RN app entry, registers CanvasPackage
 │           ├── canvas/                    # Pure drawing engine (no RN dependency)
 │           │   ├── DrawingCanvas.kt       # Custom View: touch events + rendering (blank notes)
 │           │   ├── PdfDrawingView.kt      # Custom View: PDF rendering + drawing overlay
@@ -104,6 +106,8 @@ tablet-note-app/
     │   └── useEditorStore.ts      # (stub) Current page, zoom
     ├── navigation/
     │   └── index.tsx              # NavigationContainer + RootStackParamList
+    ├── styles/
+    │   └── theme.ts               # Light/dark palettes + useTheme() hook
     ├── native/                    # Bridge wrappers
     │   ├── CanvasView.tsx         # requireNativeComponent wrapper with forwardRef
     │   ├── CanvasModule.ts        # undo/redo/clear/getStrokes/loadStrokes
@@ -138,9 +142,10 @@ There are **two separate native drawing views** — both follow the same pattern
 Both views share these implementation details:
 
 - Off-screen `Bitmap` caches committed strokes; only the active in-progress stroke is replayed each `onDraw`.
-- Eraser uses `PorterDuff.Mode.CLEAR` — requires `LAYER_TYPE_SOFTWARE` (hardware acceleration breaks it).
+- Eraser uses `PorterDuff.Mode.CLEAR` — requires `LAYER_TYPE_SOFTWARE` (hardware acceleration breaks it). In `DrawingCanvas`, the active eraser stroke is drawn inside `canvas.saveLayer()` so CLEAR only affects the layer and transparent holes reveal the white view background rather than punching through to the dark parent in dark mode. `PdfDrawingView` uses the same `saveLayer` pattern around all annotation strokes.
 - Undo replays all committed strokes onto a fresh bitmap; redo appends the restored stroke.
 - After each stroke commit or undo/redo, Kotlin emits a `canvasUndoRedoState` device event `{ canUndo, canRedo }`. The respective native view wrapper in `src/native/` subscribes via `DeviceEventEmitter` and syncs `useToolStore`.
+- On eraser `ACTION_UP`, Kotlin emits `canvasEraserLift` (no payload). `CanvasView.tsx` / `PdfCanvasView.tsx` listen and call `setTool('pen')` if `useSettingsStore.autoSwitchToPen` is true.
 
 ### Bridge (`reactbridge/` ↔ `src/native/`)
 
@@ -167,12 +172,19 @@ Both `NoteEditorScreen` and `PdfViewerScreen` use the same pattern:
 
 - **`useNotebookStore`** — persists `Note[]` + `Category[]` via zustand `persist` + AsyncStorage (key: `notebook-store`). `Note` includes optional `drawingUri` and `categoryId`. `Category` defined in `src/types/categoryTypes.ts`; built-in categories (`all`, `pdfs`, `notes`) are defined as constants and merged with user-created ones at render time.
 - **`useToolStore`** — in-memory only. Holds `activeTool` (pen/eraser/select), `canUndo`, `canRedo`, `penColor`, `penThickness`, `eraserThickness`, `presetColors`. Updated by native view `DeviceEventEmitter` listeners.
-- **`useSettingsStore`** — persists S-Pen button action mapping via AsyncStorage (key: `settings-store`). `PenAction` type: `'none' | 'togglePenEraser' | 'eraser' | 'pen' | 'undo'`. Two mappings: `penButtonAction` (single press, default `togglePenEraser`) and `penButtonDoubleAction` (double press, default `undo`).
+- **`useSettingsStore`** — persists settings via AsyncStorage (key: `settings-store`). Contains: S-Pen button action mappings (`penButtonAction` / `penButtonDoubleAction`, `PenAction` type), `autoSwitchToPen: boolean` (auto-switch to pen after eraser lift, default `true`), `isDarkMode: boolean` (default `false`).
 
 ### Sidebar & S-Pen Button
 
-- **`Sidebar.tsx`** — push-content (not overlay) flex child. Width animates 0 → 240px via `Animated.Value`; the toggle `≡` button lives in `HomeScreen`'s header outside the sidebar. Contains the settings modal (pen/eraser thickness, S-Pen action mapping, preset color swatches, clear-all).
+- **`Sidebar.tsx`** — push-content (not overlay) flex child. Width animates 0 → 240px via `Animated.Value`; the toggle `≡` button lives in `HomeScreen`'s header outside the sidebar. Contains the settings modal (APPEARANCE: dark mode toggle; DRAWING: pen/eraser thickness, auto-switch toggle; ACTION MAPPING: S-Pen button pickers; PRESET COLORS; DATA: clear-all).
 - **S-Pen flow**: `MainActivity.kt` overrides `onKeyDown` to catch `KEYCODE_STYLUS_BUTTON_PRIMARY` (257) and emit `spenButtonPress` via `DeviceEventEmitter`. `App.tsx` subscribes and reads `penButtonAction` from `useSettingsStore` to execute the mapped action against `useToolStore`. `undo` action is a no-op at the `App.tsx` level (requires an active canvas ref inside the editor screen).
+
+### Theming (Dark Mode)
+
+- **`src/styles/theme.ts`** — defines `lightTheme` and `darkTheme` color token objects (12 tokens: `bg`, `surface`, `surfaceAlt`, `border`, `text`, `textSub`, `textHint`, `accent`, `destructive`, `destructiveBg`, `overlay`). Exports `useTheme()` hook that reads `isDarkMode` from `useSettingsStore` and returns the active palette.
+- All themed UI components call `const theme = useTheme()` and apply colors via inline style overrides on top of layout-only `StyleSheet` entries (e.g. `style={[styles.container, { backgroundColor: theme.bg }]}`).
+- **Canvas drawing surface is intentionally always white** — `DrawingCanvas.kt` and `PdfDrawingView.kt` are not themed. `PdfViewerScreen` and `ThumbnailStrip` are also always dark (intentional PDF-reading UX).
+- `NavigationContainer` receives `theme={isDarkMode ? DarkTheme : DefaultTheme}` from `@react-navigation/native`.
 
 ### Known Dependency Quirks
 

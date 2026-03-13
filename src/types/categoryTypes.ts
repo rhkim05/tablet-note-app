@@ -5,7 +5,8 @@ export interface Category {
 }
 
 export const BUILT_IN_CATEGORIES: Category[] = [
-  { id: 'all',   name: 'All Notes', isBuiltIn: true },
-  { id: 'pdfs',  name: 'PDFs',      isBuiltIn: true },
-  { id: 'notes', name: 'Notes',     isBuiltIn: true },
+  { id: 'all',       name: 'All Notes', isBuiltIn: true },
+  { id: 'favorites', name: 'Favorites', isBuiltIn: true },
+  { id: 'pdfs',      name: 'PDFs',      isBuiltIn: true },
+  { id: 'notes',     name: 'Notes',     isBuiltIn: true },
 ];

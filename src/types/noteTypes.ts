@@ -11,4 +11,5 @@ export interface Note {
   lastPage?: number;    // last viewed page (checkpoint)
   thumbnailUri?: string; // path to generated cover thumbnail (page 1)
   categoryId?: string;  // ID of a custom category; undefined = uncategorized
+  isFavorite?: boolean;
 }
