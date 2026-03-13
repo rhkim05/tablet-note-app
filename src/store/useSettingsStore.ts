@@ -16,9 +16,11 @@ interface SettingsState {
   penButtonAction: PenAction;
   penButtonDoubleAction: PenAction;
   autoSwitchToPen: boolean;
+  isDarkMode: boolean;
   setPenButtonAction: (action: PenAction) => void;
   setPenButtonDoubleAction: (action: PenAction) => void;
   setAutoSwitchToPen: (value: boolean) => void;
+  setIsDarkMode: (value: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -27,9 +29,11 @@ export const useSettingsStore = create<SettingsState>()(
       penButtonAction:       'togglePenEraser',
       penButtonDoubleAction: 'undo',
       autoSwitchToPen:       true,
+      isDarkMode:            false,
       setPenButtonAction:       (action) => set({ penButtonAction: action }),
       setPenButtonDoubleAction: (action) => set({ penButtonDoubleAction: action }),
       setAutoSwitchToPen:       (value) => set({ autoSwitchToPen: value }),
+      setIsDarkMode:            (value) => set({ isDarkMode: value }),
     }),
     {
       name: 'settings-store',

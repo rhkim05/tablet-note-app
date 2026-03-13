@@ -15,6 +15,7 @@ import CanvasView from '../native/CanvasView';
 import CanvasModule from '../native/CanvasModule';
 import { useToolStore } from '../store/useToolStore';
 import { useNotebookStore } from '../store/useNotebookStore';
+import { useTheme } from '../styles/theme';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'NoteEditor'>;
 
@@ -29,6 +30,7 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
   const eraserMode      = useToolStore(s => s.eraserMode);
   const penColor        = useToolStore(s => s.penColor);
   const updateNote = useNotebookStore(s => s.updateNote);
+  const theme = useTheme();
 
   // Save strokes to file and update the note record
   const saveStrokes = useCallback(async () => {
@@ -69,12 +71,12 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.bg }]}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.backButtonText}>← Back</Text>
+          <Text style={[styles.backButtonText, { color: theme.text }]}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>{note.title}</Text>
+        <Text style={[styles.title, { color: theme.text }]} numberOfLines={1}>{note.title}</Text>
         <View style={styles.headerRight} />
       </View>
 
@@ -97,7 +99,6 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F0',
   },
   header: {
     flexDirection: 'row',
@@ -105,23 +106,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0D8',
   },
   backButton: {
     paddingVertical: 6,
     paddingRight: 16,
   },
   backButtonText: {
-    color: '#1A1A1A',
     fontSize: 16,
   },
   title: {
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1A1A',
     textAlign: 'center',
   },
   headerRight: {

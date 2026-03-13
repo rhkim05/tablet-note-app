@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { View, Text, PanResponder, StyleSheet, GestureResponderEvent, PanResponderGestureState } from 'react-native';
+import { useTheme } from '../styles/theme';
 
 interface Props {
   value: number;
@@ -13,6 +14,7 @@ const TRACK_W = 130;
 const THUMB_R = 10;
 
 export default function ThicknessSlider({ value, min, max, color = '#1A1A1A', onChange }: Props) {
+  const theme = useTheme();
   const baseValue  = useRef(value);
   const valueRef   = useRef(value);
   const minRef     = useRef(min);
@@ -48,22 +50,22 @@ export default function ThicknessSlider({ value, min, max, color = '#1A1A1A', on
         <View style={{
           width: previewSize, height: previewSize,
           borderRadius: previewSize / 2,
-          backgroundColor: color === '#1A1A1A' ? '#1A1A1A' : 'transparent',
+          backgroundColor: color === '#1A1A1A' ? theme.text : 'transparent',
           borderWidth: color === '#1A1A1A' ? 0 : 1.5,
-          borderColor: '#555',
+          borderColor: theme.textSub,
         }} />
       </View>
 
       {/* Track + thumb */}
       <View style={styles.trackArea} {...panResponder.panHandlers}>
-        <View style={styles.track}>
+        <View style={[styles.track, { backgroundColor: theme.border }]}>
           <View style={[styles.fill, { width: thumbX }]} />
         </View>
-        <View style={[styles.thumb, { left: thumbX - THUMB_R }]} />
+        <View style={[styles.thumb, { left: thumbX - THUMB_R, backgroundColor: theme.surface }]} />
       </View>
 
       {/* Value label */}
-      <Text style={styles.label}>{value}</Text>
+      <Text style={[styles.label, { color: theme.textSub }]}>{value}</Text>
     </View>
   );
 }

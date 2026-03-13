@@ -3,6 +3,7 @@ import { View, TouchableOpacity, Text, StyleSheet, Modal } from 'react-native';
 import { useToolStore } from '../store/useToolStore';
 import ThicknessSlider from './ThicknessSlider';
 import ColorPickerPanel from './ColorPickerPanel';
+import { useTheme } from '../styles/theme';
 
 interface ToolbarProps {
   onUndo?: () => void;
@@ -35,6 +36,7 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
   const penBtnRef    = useRef<TouchableOpacity>(null);
   const eraserBtnRef = useRef<TouchableOpacity>(null);
 
+  const theme = useTheme();
   const isPen    = activeTool === 'pen';
   const isEraser = activeTool === 'eraser';
 
@@ -76,60 +78,64 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
     }
   };
 
+  const activeStyle = { backgroundColor: theme.text };
+  const activeLabelStyle = { color: theme.surface };
+  const inactiveLabelStyle = { color: theme.text };
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
       {/* ── Pages strip toggle (leftmost) ── */}
       {onToggleStrip != null && totalPages != null && totalPages > 0 && (
         <>
           <TouchableOpacity
-            style={[styles.iconBtn, showStrip && styles.iconBtnActive]}
+            style={[styles.iconBtn, showStrip && activeStyle]}
             onPress={onToggleStrip}
           >
-            <View style={[styles.hamburgerLine, showStrip && styles.hamburgerLineActive]} />
-            <View style={[styles.hamburgerLine, showStrip && styles.hamburgerLineActive]} />
-            <View style={[styles.hamburgerLine, showStrip && styles.hamburgerLineActive]} />
+            <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
+            <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
+            <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
           </TouchableOpacity>
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
         </>
       )}
 
       {/* ── Navigate ── */}
       {showHandTool && (
         <TouchableOpacity
-          style={[styles.button, activeTool === 'select' && styles.buttonActive]}
+          style={[styles.button, activeTool === 'select' && activeStyle]}
           onPress={() => { setTool('select'); closePenPopup(); closeEraserPopup(); }}
         >
           <Text style={styles.buttonIcon}>✋</Text>
-          <Text style={[styles.buttonLabel, activeTool === 'select' && styles.buttonLabelActive]}>
+          <Text style={[styles.buttonLabel, activeTool === 'select' ? activeLabelStyle : inactiveLabelStyle]}>
             Navigate
           </Text>
         </TouchableOpacity>
       )}
 
-      <View style={styles.divider} />
+      <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
       {/* ── Draw tools ── */}
       <TouchableOpacity
         ref={penBtnRef}
-        style={[styles.button, isPen && styles.buttonActive]}
+        style={[styles.button, isPen && activeStyle]}
         onPress={handlePenPress}
       >
         <Text style={styles.buttonIcon}>✏️</Text>
-        <Text style={[styles.buttonLabel, isPen && styles.buttonLabelActive]}>Pen</Text>
+        <Text style={[styles.buttonLabel, isPen ? activeLabelStyle : inactiveLabelStyle]}>Pen</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
         ref={eraserBtnRef}
-        style={[styles.button, isEraser && styles.buttonActive]}
+        style={[styles.button, isEraser && activeStyle]}
         onPress={handleEraserPress}
       >
         <Text style={styles.buttonIcon}>⬜</Text>
-        <Text style={[styles.buttonLabel, isEraser && styles.buttonLabelActive]}>Eraser</Text>
+        <Text style={[styles.buttonLabel, isEraser ? activeLabelStyle : inactiveLabelStyle]}>Eraser</Text>
       </TouchableOpacity>
 
       {(isPen || isEraser) && (
-        <View style={styles.fingerHint}>
-          <Text style={styles.fingerHintText}>👆 finger scrolls</Text>
+        <View style={[styles.fingerHint, { backgroundColor: theme.surfaceAlt }]}>
+          <Text style={[styles.fingerHintText, { color: theme.textSub }]}>👆 finger scrolls</Text>
         </View>
       )}
 
@@ -142,7 +148,7 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
         onPress={onUndo}
       >
         <Text style={styles.buttonIcon}>↩️</Text>
-        <Text style={[styles.buttonLabel, !canUndo && styles.buttonLabelDisabled]}>Undo</Text>
+        <Text style={[styles.buttonLabel, inactiveLabelStyle, !canUndo && styles.buttonLabelDisabled]}>Undo</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -151,13 +157,13 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
         onPress={onRedo}
       >
         <Text style={styles.buttonIcon}>↪️</Text>
-        <Text style={[styles.buttonLabel, !canRedo && styles.buttonLabelDisabled]}>Redo</Text>
+        <Text style={[styles.buttonLabel, inactiveLabelStyle, !canRedo && styles.buttonLabelDisabled]}>Redo</Text>
       </TouchableOpacity>
 
       {totalPages != null && totalPages > 0 && (
         <>
-          <View style={styles.divider} />
-          <Text style={styles.pageIndex}>{currentPage} / {totalPages}</Text>
+          <View style={[styles.divider, { backgroundColor: theme.border }]} />
+          <Text style={[styles.pageIndex, { color: theme.textSub }]}>{currentPage} / {totalPages}</Text>
         </>
       )}
 
@@ -171,12 +177,12 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closePenPopup} activeOpacity={1} />
 
         {/* Color swatch + thickness card */}
-        <View style={[styles.penPopup, { top: popupPos.top, left: popupPos.left }]}>
+        <View style={[styles.penPopup, { top: popupPos.top, left: popupPos.left, backgroundColor: theme.surface, borderColor: theme.border }]}>
           <TouchableOpacity
             style={[styles.colorBtn, { backgroundColor: penColor }]}
             onPress={() => { setPickerKey(k => k + 1); setShowColorPicker(v => !v); }}
           />
-          <View style={styles.popupDivider} />
+          <View style={[styles.popupDivider, { backgroundColor: theme.border }]} />
           <ThicknessSlider
             value={penThickness}
             min={1} max={30}
@@ -208,25 +214,25 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
       >
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closeEraserPopup} activeOpacity={1} />
 
-        <View style={[styles.penPopup, { top: eraserPopupPos.top, left: eraserPopupPos.left }]}>
+        <View style={[styles.penPopup, { top: eraserPopupPos.top, left: eraserPopupPos.left, backgroundColor: theme.surface, borderColor: theme.border }]}>
           {/* Mode selector */}
           <TouchableOpacity
-            style={[styles.eraserModeBtn, eraserMode === 'pixel' && styles.eraserModeBtnActive]}
+            style={[styles.eraserModeBtn, { borderColor: theme.border }, eraserMode === 'pixel' && activeStyle]}
             onPress={() => setEraserMode('pixel')}
           >
-            <Text style={[styles.eraserModeText, eraserMode === 'pixel' && styles.eraserModeTextActive]}>
+            <Text style={[styles.eraserModeText, { color: theme.textSub }, eraserMode === 'pixel' && activeLabelStyle]}>
               픽셀
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.eraserModeBtn, eraserMode === 'stroke' && styles.eraserModeBtnActive]}
+            style={[styles.eraserModeBtn, { borderColor: theme.border }, eraserMode === 'stroke' && activeStyle]}
             onPress={() => setEraserMode('stroke')}
           >
-            <Text style={[styles.eraserModeText, eraserMode === 'stroke' && styles.eraserModeTextActive]}>
+            <Text style={[styles.eraserModeText, { color: theme.textSub }, eraserMode === 'stroke' && activeLabelStyle]}>
               획
             </Text>
           </TouchableOpacity>
-          <View style={styles.popupDivider} />
+          <View style={[styles.popupDivider, { backgroundColor: theme.border }]} />
           <ThicknessSlider
             value={eraserThickness}
             min={10} max={100}
@@ -243,9 +249,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0D8',
     paddingHorizontal: 12,
     paddingVertical: 6,
     gap: 4,
@@ -259,15 +263,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 6,
   },
-  buttonActive:  { backgroundColor: '#1A1A1A' },
   buttonDisabled: { opacity: 0.3 },
   buttonIcon:  { fontSize: 16 },
-  buttonLabel: { fontSize: 13, fontWeight: '500', color: '#1A1A1A' },
-  buttonLabelActive:   { color: '#FFFFFF' },
-  buttonLabelDisabled: { color: '#1A1A1A' },
+  buttonLabel: { fontSize: 13, fontWeight: '500' },
+  buttonLabelDisabled: { opacity: 0.4 },
   divider: {
     width: 1, height: 24,
-    backgroundColor: '#E0E0D8',
     marginHorizontal: 6,
   },
   iconBtn: {
@@ -278,17 +279,10 @@ const styles = StyleSheet.create({
     gap: 4,
     borderRadius: 8,
   },
-  iconBtnActive: {
-    backgroundColor: '#1A1A1A',
-  },
   hamburgerLine: {
     width: 18,
     height: 2,
     borderRadius: 1,
-    backgroundColor: '#1A1A1A',
-  },
-  hamburgerLineActive: {
-    backgroundColor: '#FFFFFF',
   },
   colorBtn: {
     width: 28, height: 28,
@@ -300,14 +294,12 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    backgroundColor: '#F0F0EA',
     borderRadius: 6,
   },
-  fingerHintText: { fontSize: 11, color: '#888' },
+  fingerHintText: { fontSize: 11 },
   pageIndex: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#444',
     paddingHorizontal: 8,
   },
   // Pen popup
@@ -315,7 +307,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -326,12 +317,10 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
     borderWidth: 1,
-    borderColor: '#E0E0D8',
   },
   popupDivider: {
     width: 1,
     height: 20,
-    backgroundColor: '#E0E0D8',
   },
   pickerAnchor: {
     position: 'absolute',
@@ -341,18 +330,9 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 7,
     borderWidth: 1,
-    borderColor: '#D0D0C8',
-  },
-  eraserModeBtnActive: {
-    backgroundColor: '#1A1A1A',
-    borderColor: '#1A1A1A',
   },
   eraserModeText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#444',
-  },
-  eraserModeTextActive: {
-    color: '#FFFFFF',
   },
 });
