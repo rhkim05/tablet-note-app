@@ -1,6 +1,7 @@
 import React, { forwardRef, useEffect } from 'react';
 import { DeviceEventEmitter, requireNativeComponent, StyleProp, ViewStyle } from 'react-native';
 import { useToolStore } from '../store/useToolStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 interface PdfCanvasViewProps {
   pdfUri?: string;
@@ -16,18 +17,26 @@ interface PdfCanvasViewProps {
 const NativePdfCanvasView = requireNativeComponent<PdfCanvasViewProps>('PdfCanvasView');
 
 const PdfCanvasView = forwardRef<any, PdfCanvasViewProps>((props, ref) => {
-  const { setCanUndo, setCanRedo } = useToolStore();
+  const { setCanUndo, setCanRedo, setTool } = useToolStore();
 
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener(
+    const undoSub = DeviceEventEmitter.addListener(
       'canvasUndoRedoState',
       ({ canUndo, canRedo }: { canUndo: boolean; canRedo: boolean }) => {
         setCanUndo(canUndo);
         setCanRedo(canRedo);
       },
     );
-    return () => sub.remove();
-  }, [setCanUndo, setCanRedo]);
+    const eraserLiftSub = DeviceEventEmitter.addListener('canvasEraserLift', () => {
+      if (useSettingsStore.getState().autoSwitchToPen) {
+        setTool('pen');
+      }
+    });
+    return () => {
+      undoSub.remove();
+      eraserLiftSub.remove();
+    };
+  }, [setCanUndo, setCanRedo, setTool]);
 
   return <NativePdfCanvasView ref={ref} {...props} />;
 });

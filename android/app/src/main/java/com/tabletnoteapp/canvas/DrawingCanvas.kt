@@ -45,6 +45,7 @@ class DrawingCanvas(context: Context) : View(context) {
     // ── Callbacks ─────────────────────────────────────────────────────────
 
     var onUndoRedoStateChanged: ((canUndo: Boolean, canRedo: Boolean) -> Unit)? = null
+    var onEraserLift: (() -> Unit)? = null
 
     // ── Rendering ────────────────────────────────────────────────────────────
 
@@ -143,6 +144,7 @@ class DrawingCanvas(context: Context) : View(context) {
                         strokeOriginalIndexMap = emptyMap()
                     }
                     notifyUndoRedoState()
+                    onEraserLift?.invoke()
                     invalidate()
                 }
             }
@@ -177,6 +179,7 @@ class DrawingCanvas(context: Context) : View(context) {
                     commitStroke(stroke)
                     activeStroke = null
                     notifyUndoRedoState()
+                    if (currentTool == ToolType.ERASER) onEraserLift?.invoke()
                 }
             }
         }

@@ -3,6 +3,7 @@ import React, { forwardRef, useEffect } from 'react';
 import { DeviceEventEmitter, requireNativeComponent, StyleProp, ViewStyle } from 'react-native';
 import { ToolMode } from '../types/canvasTypes';
 import { useToolStore } from '../store/useToolStore';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 interface CanvasViewProps {
   tool: ToolMode;
@@ -17,15 +18,23 @@ interface CanvasViewProps {
 const NativeCanvasView = requireNativeComponent<CanvasViewProps>('CanvasView');
 
 const CanvasView = forwardRef<any, CanvasViewProps>((props, ref) => {
-  const { setCanUndo, setCanRedo } = useToolStore();
+  const { setCanUndo, setCanRedo, setTool } = useToolStore();
 
   useEffect(() => {
-    const sub = DeviceEventEmitter.addListener('canvasUndoRedoState', (event: { canUndo: boolean; canRedo: boolean }) => {
+    const undoSub = DeviceEventEmitter.addListener('canvasUndoRedoState', (event: { canUndo: boolean; canRedo: boolean }) => {
       setCanUndo(event.canUndo);
       setCanRedo(event.canRedo);
     });
-    return () => sub.remove();
-  }, [setCanUndo, setCanRedo]);
+    const eraserLiftSub = DeviceEventEmitter.addListener('canvasEraserLift', () => {
+      if (useSettingsStore.getState().autoSwitchToPen) {
+        setTool('pen');
+      }
+    });
+    return () => {
+      undoSub.remove();
+      eraserLiftSub.remove();
+    };
+  }, [setCanUndo, setCanRedo, setTool]);
 
   return <NativeCanvasView ref={ref} {...props} />;
 });

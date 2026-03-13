@@ -15,8 +15,10 @@ export const PEN_ACTION_LABELS: Record<PenAction, string> = {
 interface SettingsState {
   penButtonAction: PenAction;
   penButtonDoubleAction: PenAction;
+  autoSwitchToPen: boolean;
   setPenButtonAction: (action: PenAction) => void;
   setPenButtonDoubleAction: (action: PenAction) => void;
+  setAutoSwitchToPen: (value: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -24,8 +26,10 @@ export const useSettingsStore = create<SettingsState>()(
     set => ({
       penButtonAction:       'togglePenEraser',
       penButtonDoubleAction: 'undo',
+      autoSwitchToPen:       true,
       setPenButtonAction:       (action) => set({ penButtonAction: action }),
       setPenButtonDoubleAction: (action) => set({ penButtonDoubleAction: action }),
+      setAutoSwitchToPen:       (value) => set({ autoSwitchToPen: value }),
     }),
     {
       name: 'settings-store',

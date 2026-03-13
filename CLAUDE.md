@@ -78,6 +78,8 @@ tablet-note-app/
 │   ├── gradle.properties          # JDK 17 path, Hermes, new arch flags
 │   └── app/
 │       └── src/main/java/com/tabletnoteapp/
+│           ├── MainActivity.kt            # S-Pen button key intercept (KEYCODE_STYLUS_BUTTON_PRIMARY)
+│           ├── MainApplication.kt         # RN app entry, registers CanvasPackage
 │           ├── canvas/                    # Pure drawing engine (no RN dependency)
 │           │   ├── DrawingCanvas.kt       # Custom View: touch events + rendering (blank notes)
 │           │   ├── PdfDrawingView.kt      # Custom View: PDF rendering + drawing overlay

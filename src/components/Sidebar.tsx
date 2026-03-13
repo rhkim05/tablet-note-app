@@ -12,6 +12,7 @@ import {
   Platform,
   Alert,
   Dimensions,
+  Switch,
 } from 'react-native';
 import { Category, BUILT_IN_CATEGORIES } from '../types/categoryTypes';
 import { useToolStore } from '../store/useToolStore';
@@ -48,6 +49,8 @@ export default function Sidebar({ open, categories, selectedCategoryId, onSelect
   const penButtonDoubleAction = useSettingsStore(s => s.penButtonDoubleAction);
   const setPenButtonAction = useSettingsStore(s => s.setPenButtonAction);
   const setPenButtonDoubleAction = useSettingsStore(s => s.setPenButtonDoubleAction);
+  const autoSwitchToPen = useSettingsStore(s => s.autoSwitchToPen);
+  const setAutoSwitchToPen = useSettingsStore(s => s.setAutoSwitchToPen);
 
   const showActionPicker = (current: PenAction, setter: (a: PenAction) => void) => {
     const actions: PenAction[] = ['none', 'togglePenEraser', 'eraser', 'pen', 'undo'];
@@ -163,6 +166,15 @@ export default function Sidebar({ open, categories, selectedCategoryId, onSelect
             <View style={settingsStyles.row}>
               <Text style={settingsStyles.rowLabel}>Eraser thickness</Text>
               <ThicknessSlider value={eraserThickness} min={8} max={60} onChange={setEraserThickness} />
+            </View>
+            <View style={settingsStyles.row}>
+              <Text style={settingsStyles.rowLabel}>Auto-switch to pen on lift</Text>
+              <Switch
+                value={autoSwitchToPen}
+                onValueChange={setAutoSwitchToPen}
+                trackColor={{ false: '#D0D0C8', true: '#1A1A1A' }}
+                thumbColor="#FFFFFF"
+              />
             </View>
 
             <View style={settingsStyles.divider} />

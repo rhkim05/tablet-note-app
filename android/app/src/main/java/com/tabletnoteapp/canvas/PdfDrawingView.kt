@@ -167,6 +167,7 @@ class PdfDrawingView(context: Context) : View(context) {
     var onPageChanged:         ((Int) -> Unit)?             = null
     var onLoadComplete:        ((Int) -> Unit)?             = null
     var onUndoRedoStateChanged: ((Boolean, Boolean) -> Unit)? = null
+    var onEraserLift: (() -> Unit)? = null
     private var lastReportedPage = -1
 
     init { setLayerType(LAYER_TYPE_SOFTWARE, null) }
@@ -479,7 +480,9 @@ class PdfDrawingView(context: Context) : View(context) {
                         strokeEraserBuffer.clear()
                         strokeOriginalIndexMap = emptyMap()
                     }
-                    notifyUndoRedoState(); invalidate()
+                    notifyUndoRedoState()
+                    onEraserLift?.invoke()
+                    invalidate()
                 }
             }
             return true
@@ -515,7 +518,9 @@ class PdfDrawingView(context: Context) : View(context) {
                         committedStrokes.add(s)
                         undoStack.add(UndoAction.AddStroke(s))
                     }
-                    activeStroke = null; notifyUndoRedoState()
+                    activeStroke = null
+                    notifyUndoRedoState()
+                    if (currentTool == ToolType.ERASER) onEraserLift?.invoke()
                 }
                 invalidate()
             }

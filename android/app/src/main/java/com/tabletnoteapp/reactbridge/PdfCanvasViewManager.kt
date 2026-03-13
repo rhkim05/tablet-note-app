@@ -31,6 +31,10 @@ class PdfCanvasViewManager : SimpleViewManager<PdfDrawingView>() {
                     putBoolean("canRedo", canRedo)
                 })
         }
+        view.onEraserLift = {
+            context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("canvasEraserLift", null)
+        }
         return view
     }
 
