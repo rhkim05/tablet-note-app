@@ -39,7 +39,11 @@ export const useNotebookStore = create<NotebookState>()(
       deleteCategory: (id) =>
         set(state => ({
           categories: state.categories.filter(c => c.id !== id),
-          notes: state.notes.map(n => n.categoryId === id ? { ...n, categoryId: undefined } : n),
+          notes: state.notes.map(n =>
+            n.categoryIds?.includes(id)
+              ? { ...n, categoryIds: n.categoryIds.filter(c => c !== id) }
+              : n
+          ),
         })),
     }),
     {

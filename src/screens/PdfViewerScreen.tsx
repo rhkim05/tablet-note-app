@@ -59,6 +59,9 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
       ({ totalPages: tp }: { totalPages: number }) => {
         setTotalPages(tp);
         setLoading(false);
+        if (!note.totalPages || note.totalPages !== tp) {
+          updateNote(note.id, { totalPages: tp });
+        }
         // Jump to last checkpoint
         if (note.lastPage && note.lastPage > 1) {
           const tag = findNodeHandle(viewRef.current);
