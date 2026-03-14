@@ -75,7 +75,7 @@ tablet-note-app/
 ├── App.tsx                        # Mounts <Navigation />
 ├── android/
 │   ├── build.gradle               # AGP 8.1.1, compileSdk 34, androidx pins
-│   ├── gradle.properties          # JDK 17 path, Hermes, new arch flags
+│   ├── gradle.properties          # Hermes, new arch flags (committed; JDK path goes in ~/.gradle/gradle.properties)
 │   └── app/
 │       └── src/main/java/com/tabletnoteapp/
 │           ├── MainActivity.kt            # S-Pen button key intercept (KEYCODE_STYLUS_BUTTON_PRIMARY)
@@ -84,7 +84,7 @@ tablet-note-app/
 │           │   ├── DrawingCanvas.kt       # Custom View: touch events + rendering (blank notes)
 │           │   ├── PdfDrawingView.kt      # Custom View: PDF rendering + drawing overlay
 │           │   ├── ColorGradientView.kt   # Native HSV color picker gradient view
-│           │   ├── models/Stroke.kt
+│           │   ├── models/Stroke.kt       # Stroke, StrokeStyle, ToolType enum, UndoAction sealed class
 │           │   ├── models/Point.kt        # Point (x, y, pressure)
 │           │   └── utils/BezierSmoother.kt
 │           └── reactbridge/               # RN <-> Kotlin bridge
