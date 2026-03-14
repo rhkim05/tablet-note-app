@@ -128,7 +128,11 @@ class PdfDrawingView(context: Context) : View(context) {
     private val strokeEraserBuffer = mutableListOf<Pair<Int, Stroke>>()
     private var strokeOriginalIndexMap: Map<Stroke, Int> = emptyMap()
 
-    var currentTool:        ToolType = ToolType.SELECT
+    var currentTool:        ToolType = ToolType.SCROLL
+        set(value) {
+            if (field == ToolType.SELECT && value != ToolType.SELECT) clearSelection()
+            field = value
+        }
     var penColor:           Int      = Color.BLACK
     var penThickness:       Float    = 4f
     var eraserThickness:    Float    = 24f
@@ -161,6 +165,45 @@ class PdfDrawingView(context: Context) : View(context) {
     private var eraserCursorY = 0f
     private var showEraserCursor = false
     private val pageBgPaint = Paint().apply { color = Color.WHITE }
+
+    // ── Selection state ───────────────────────────────────────────────────────
+
+    private enum class SelectState { IDLE, DRAWING, SELECTED, MOVING, RESIZING }
+    private var selectState       = SelectState.IDLE
+    private val selectionDragRect = RectF()
+    private val selectedIndices   = mutableSetOf<Int>()
+    private val selectionBounds   = RectF()
+    private var moveStartX = 0f
+    private var moveStartY = 0f
+    private var resizeHandleIndex = -1
+    private val HANDLE_RADIUS    = 28f
+    private val SELECTION_PADDING = 12f
+
+    private val selectionDragPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = 2f
+        color = Color.argb(200, 30, 120, 255)
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(12f, 8f), 0f)
+    }
+    private val selectionBoundsPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = 2f
+        color = Color.argb(220, 30, 120, 255)
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(12f, 8f), 0f)
+    }
+    private val selectionFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL; color = Color.argb(25, 30, 120, 255)
+    }
+    private val handleFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL; color = Color.WHITE
+    }
+    private val handleBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE; strokeWidth = 2.5f
+        color = Color.argb(220, 30, 120, 255)
+    }
+    private val selectedStrokeOverlayPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        color = Color.argb(80, 30, 120, 255)
+    }
     private val scrollbarActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.argb(220, 120, 120, 120)
     }
@@ -174,6 +217,7 @@ class PdfDrawingView(context: Context) : View(context) {
     var onLoadComplete:        ((Int) -> Unit)?             = null
     var onUndoRedoStateChanged: ((Boolean, Boolean) -> Unit)? = null
     var onEraserLift: (() -> Unit)? = null
+    var onSelectionChanged:    ((hasSelection: Boolean, count: Int, bounds: RectF) -> Unit)? = null
     private var lastReportedPage = -1
 
     init { setLayerType(LAYER_TYPE_SOFTWARE, null) }
@@ -336,6 +380,31 @@ class PdfDrawingView(context: Context) : View(context) {
 
         if (layerSave != -1) canvas.restoreToCount(layerSave)
         canvas.restore()  // remove page clip
+
+        // 3. Selection overlays (logical space, no page clip so handles are always visible)
+        when (selectState) {
+            SelectState.DRAWING -> {
+                canvas.drawRect(selectionDragRect, selectionFillPaint)
+                canvas.drawRect(selectionDragRect, selectionDragPaint)
+            }
+            SelectState.SELECTED, SelectState.MOVING, SelectState.RESIZING -> {
+                for (idx in selectedIndices) {
+                    val stroke = committedStrokes.getOrNull(idx) ?: continue
+                    BezierSmoother.buildPath(stroke.points)?.let {
+                        selectedStrokeOverlayPaint.strokeWidth = stroke.style.thickness + 4f
+                        canvas.drawPath(it, selectedStrokeOverlayPaint)
+                    }
+                }
+                canvas.drawRect(selectionBounds, selectionFillPaint)
+                canvas.drawRect(selectionBounds, selectionBoundsPaint)
+                drawHandle(canvas, selectionBounds.left,  selectionBounds.top)
+                drawHandle(canvas, selectionBounds.right, selectionBounds.top)
+                drawHandle(canvas, selectionBounds.right, selectionBounds.bottom)
+                drawHandle(canvas, selectionBounds.left,  selectionBounds.bottom)
+            }
+            else -> {}
+        }
+
         canvas.restore()  // remove translate + scale
 
         // 3. Scrollbar (screen coords, outside transform)
@@ -381,10 +450,10 @@ class PdfDrawingView(context: Context) : View(context) {
         val isScrollbarDown = event.actionMasked == MotionEvent.ACTION_DOWN && isOnScrollbar(event.x, event.y)
         if (isScrollbarDragging || isScrollbarDown) return handleScrollbar(event)
 
-        // Scroll/Select mode: all input → scroll/zoom
+        // Scroll or Select mode: pan/zoom (no selection UI on PDF)
         if (currentTool == ToolType.SCROLL || currentTool == ToolType.SELECT) return handleScroll(event)
 
-        // Draw mode: all input draws (finger scroll only available via SELECT tool)
+        // Draw mode: all input draws (finger scroll only available via Scroll tool)
         return handleDraw(event)
     }
 
@@ -554,6 +623,163 @@ class PdfDrawingView(context: Context) : View(context) {
             }
         }
         return true
+    }
+
+    // ── Selection ─────────────────────────────────────────────────────────────
+
+    private fun handleSelect(event: MotionEvent) {
+        val xDoc = toLogicalX(event.x)
+        val yDoc = toLogicalY(event.y)
+
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                val handleIdx = hitTestHandle(xDoc, yDoc)
+                when {
+                    handleIdx >= 0 && selectState == SelectState.SELECTED -> {
+                        selectState = SelectState.RESIZING
+                        resizeHandleIndex = handleIdx
+                        moveStartX = xDoc; moveStartY = yDoc
+                    }
+                    selectState == SelectState.SELECTED && selectionBounds.contains(xDoc, yDoc) -> {
+                        selectState = SelectState.MOVING
+                        moveStartX = xDoc; moveStartY = yDoc
+                    }
+                    else -> {
+                        clearSelection()
+                        selectState = SelectState.DRAWING
+                        selectionDragRect.set(xDoc, yDoc, xDoc, yDoc)
+                    }
+                }
+                invalidate()
+            }
+            MotionEvent.ACTION_MOVE -> {
+                when (selectState) {
+                    SelectState.DRAWING -> {
+                        selectionDragRect.right = xDoc
+                        selectionDragRect.bottom = yDoc
+                        invalidate()
+                    }
+                    SelectState.MOVING -> {
+                        val dx = xDoc - moveStartX; val dy = yDoc - moveStartY
+                        moveStartX = xDoc; moveStartY = yDoc
+                        for (idx in selectedIndices) {
+                            val stroke = committedStrokes.getOrNull(idx) ?: continue
+                            for (i in stroke.points.indices) {
+                                val p = stroke.points[i]
+                                stroke.points[i] = p.copy(x = p.x + dx, y = p.y + dy)
+                            }
+                        }
+                        updateSelectionBounds()
+                        invalidate()
+                    }
+                    SelectState.RESIZING -> {
+                        val dx = xDoc - moveStartX; val dy = yDoc - moveStartY
+                        moveStartX = xDoc; moveStartY = yDoc
+                        val pivotX = if (resizeHandleIndex == 0 || resizeHandleIndex == 3) selectionBounds.right else selectionBounds.left
+                        val pivotY = if (resizeHandleIndex == 0 || resizeHandleIndex == 1) selectionBounds.bottom else selectionBounds.top
+                        val w = selectionBounds.width().takeIf { it > 0f } ?: return
+                        val h = selectionBounds.height().takeIf { it > 0f } ?: return
+                        val sx = (1f + dx / w).coerceIn(0.1f, 10f)
+                        val sy = (1f + dy / h).coerceIn(0.1f, 10f)
+                        for (idx in selectedIndices) {
+                            val stroke = committedStrokes.getOrNull(idx) ?: continue
+                            for (i in stroke.points.indices) {
+                                val p = stroke.points[i]
+                                stroke.points[i] = p.copy(
+                                    x = pivotX + (p.x - pivotX) * sx,
+                                    y = pivotY + (p.y - pivotY) * sy,
+                                )
+                            }
+                        }
+                        updateSelectionBounds()
+                        invalidate()
+                    }
+                    else -> {}
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                when (selectState) {
+                    SelectState.DRAWING -> {
+                        selectionDragRect.set(
+                            minOf(selectionDragRect.left, selectionDragRect.right),
+                            minOf(selectionDragRect.top,  selectionDragRect.bottom),
+                            maxOf(selectionDragRect.left, selectionDragRect.right),
+                            maxOf(selectionDragRect.top,  selectionDragRect.bottom),
+                        )
+                        computeSelection()
+                        selectState = if (selectedIndices.isNotEmpty()) SelectState.SELECTED else SelectState.IDLE
+                        emitSelectionChanged()
+                    }
+                    SelectState.MOVING, SelectState.RESIZING -> {
+                        selectState = SelectState.SELECTED
+                        emitSelectionChanged()
+                    }
+                    else -> {}
+                }
+                invalidate()
+            }
+        }
+    }
+
+    private fun computeSelection() {
+        selectedIndices.clear()
+        for ((i, stroke) in committedStrokes.withIndex()) {
+            if (stroke.points.any { p -> selectionDragRect.contains(p.x, p.y) }) selectedIndices.add(i)
+        }
+        if (selectedIndices.isNotEmpty()) updateSelectionBounds()
+    }
+
+    private fun updateSelectionBounds() {
+        var minX = Float.MAX_VALUE; var minY = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE; var maxY = Float.MIN_VALUE
+        for (idx in selectedIndices) {
+            for (p in (committedStrokes.getOrNull(idx) ?: continue).points) {
+                if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y
+                if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y
+            }
+        }
+        if (minX == Float.MAX_VALUE) { selectionBounds.setEmpty(); return }
+        selectionBounds.set(minX - SELECTION_PADDING, minY - SELECTION_PADDING,
+                            maxX + SELECTION_PADDING, maxY + SELECTION_PADDING)
+    }
+
+    private fun hitTestHandle(x: Float, y: Float): Int {
+        val corners = listOf(
+            selectionBounds.left  to selectionBounds.top,
+            selectionBounds.right to selectionBounds.top,
+            selectionBounds.right to selectionBounds.bottom,
+            selectionBounds.left  to selectionBounds.bottom,
+        )
+        val hitRadius = HANDLE_RADIUS * 2.5f
+        for ((i, c) in corners.withIndex()) {
+            val dx = x - c.first; val dy = y - c.second
+            if (dx * dx + dy * dy <= hitRadius * hitRadius) return i
+        }
+        return -1
+    }
+
+    private fun clearSelection() {
+        selectedIndices.clear(); selectionBounds.setEmpty()
+        selectState = SelectState.IDLE
+        emitSelectionChanged()
+    }
+
+    private fun emitSelectionChanged() {
+        onSelectionChanged?.invoke(selectedIndices.isNotEmpty(), selectedIndices.size, RectF(selectionBounds))
+    }
+
+    fun deleteSelected() {
+        if (selectedIndices.isEmpty()) return
+        val entries = selectedIndices.sortedDescending().map { idx -> idx to committedStrokes[idx] }
+        for ((idx, _) in entries) committedStrokes.removeAt(idx)
+        undoStack.add(UndoAction.EraseStrokes(entries.map { (i, s) -> i to s }))
+        redoStack.clear(); clearSelection(); notifyUndoRedoState(); invalidate()
+    }
+
+    private fun drawHandle(canvas: Canvas, x: Float, y: Float) {
+        canvas.drawCircle(x, y, HANDLE_RADIUS, handleFillPaint)
+        canvas.drawCircle(x, y, HANDLE_RADIUS, handleBorderPaint)
     }
 
     private fun eraseStrokesAtPoint(xDoc: Float, yDoc: Float) {

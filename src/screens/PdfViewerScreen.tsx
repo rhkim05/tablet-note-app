@@ -19,6 +19,8 @@ import { RootStackParamList } from '../navigation';
 import Toolbar from '../components/Toolbar';
 import PdfCanvasView from '../native/PdfCanvasView';
 import PdfCanvasModule from '../native/PdfCanvasModule';
+import SelectionPopup from '../components/SelectionPopup';
+import { SelectionInfo } from '../native/CanvasView';
 import { useToolStore } from '../store/useToolStore';
 import { useNotebookStore } from '../store/useNotebookStore';
 import ThumbnailStrip from '../components/ThumbnailStrip';
@@ -35,6 +37,7 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
   const [showStrip, setShowStrip] = useState(false);
   const [showPageInput, setShowPageInput] = useState(false);
   const [pageInputText, setPageInputText] = useState('');
+  const [selectionInfo, setSelectionInfo] = useState<SelectionInfo | null>(null);
   const viewRef = useRef<any>(null);
   const updateNote = useNotebookStore(s => s.updateNote);
   const activeTool           = useToolStore(s => s.activeTool);
@@ -56,6 +59,10 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
       'pdfCanvasPageChanged',
       ({ page }: { page: number }) => setCurrentPage(page),
     );
+    const selSub = DeviceEventEmitter.addListener(
+      'pdfSelectionChanged',
+      (info: SelectionInfo) => setSelectionInfo(info),
+    );
     const loadSub = DeviceEventEmitter.addListener(
       'pdfCanvasLoadComplete',
       ({ totalPages: tp }: { totalPages: number }) => {
@@ -71,7 +78,7 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
         }
       },
     );
-    return () => { pageSub.remove(); loadSub.remove(); };
+    return () => { pageSub.remove(); selSub.remove(); loadSub.remove(); };
   }, [note.lastPage]);
 
   // Load saved strokes once the view is laid out
@@ -175,6 +182,16 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
             <Text style={styles.pageIndexText}>{currentPage} / {totalPages}</Text>
           </TouchableOpacity>
         )}
+
+        {selectionInfo?.hasSelection && (() => {
+          const tag = findNodeHandle(viewRef.current);
+          return tag != null ? (
+            <SelectionPopup
+              info={selectionInfo}
+              onDelete={() => PdfCanvasModule.deleteSelected(tag)}
+            />
+          ) : null;
+        })()}
       </View>
 
       <Modal visible={showPageInput} transparent animationType="fade" onRequestClose={() => setShowPageInput(false)}>

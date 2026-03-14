@@ -35,6 +35,19 @@ class PdfCanvasViewManager : SimpleViewManager<PdfDrawingView>() {
             context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
                 .emit("canvasEraserLift", null)
         }
+        view.onSelectionChanged = { hasSelection, count, bounds ->
+            context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit("pdfSelectionChanged", Arguments.createMap().apply {
+                    putBoolean("hasSelection", hasSelection)
+                    putInt("count", count)
+                    putMap("bounds", Arguments.createMap().apply {
+                        putDouble("x", bounds.left.toDouble())
+                        putDouble("y", bounds.top.toDouble())
+                        putDouble("width", bounds.width().toDouble())
+                        putDouble("height", bounds.height().toDouble())
+                    })
+                })
+        }
         return view
     }
 

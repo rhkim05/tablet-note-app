@@ -15,9 +15,10 @@ class PdfCanvasModule(private val reactContext: ReactApplicationContext) :
 
     override fun getName() = "PdfCanvasModule"
 
-    @ReactMethod fun undo(viewTag: Int)  { withView(viewTag) { it.undo() } }
-    @ReactMethod fun redo(viewTag: Int)  { withView(viewTag) { it.redo() } }
-    @ReactMethod fun clear(viewTag: Int) { withView(viewTag) { it.clearCanvas() } }
+    @ReactMethod fun undo(viewTag: Int)           { withView(viewTag) { it.undo() } }
+    @ReactMethod fun redo(viewTag: Int)           { withView(viewTag) { it.redo() } }
+    @ReactMethod fun clear(viewTag: Int)          { withView(viewTag) { it.clearCanvas() } }
+    @ReactMethod fun deleteSelected(viewTag: Int) { withView(viewTag) { it.deleteSelected() } }
 
     @ReactMethod
     fun getStrokes(viewTag: Int, promise: Promise) {

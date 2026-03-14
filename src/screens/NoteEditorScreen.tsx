@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  Share,
   findNodeHandle,
 } from 'react-native';
 import RNFS from 'react-native-fs';
@@ -133,7 +134,15 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
         />
 
         {selectionInfo?.hasSelection && viewTag != null && (
-          <SelectionPopup info={selectionInfo} viewTag={viewTag} />
+          <SelectionPopup
+            info={selectionInfo}
+            onDelete={() => CanvasModule.deleteSelected(viewTag)}
+            onCut={() => CanvasModule.cutSelected(viewTag)}
+            onCapture={async () => {
+              const fp = await CanvasModule.captureSelected(viewTag);
+              if (fp) await Share.share({ url: `file://${fp}`, title: 'Captured selection' });
+            }}
+          />
         )}
       </View>
 

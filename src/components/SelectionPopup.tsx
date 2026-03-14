@@ -1,37 +1,22 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Share } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useTheme } from '../styles/theme';
-import CanvasModule from '../native/CanvasModule';
 import { SelectionInfo } from '../native/CanvasView';
 
 interface Props {
   info: SelectionInfo;
-  viewTag: number;
+  onDelete?: () => void;
+  onCut?: () => void;
+  onCapture?: () => void;
 }
 
-export default function SelectionPopup({ info, viewTag }: Props) {
+export default function SelectionPopup({ info, onDelete, onCut, onCapture }: Props) {
   const theme = useTheme();
   if (!info.hasSelection) return null;
 
-  // Position popup below the selection bounding box, clamped to screen
+  // Position popup below the selection bounding box
   const popupLeft = info.bounds.x;
   const popupTop  = info.bounds.y + info.bounds.height + 12;
-
-  const handleDelete = () => {
-    CanvasModule.deleteSelected(viewTag);
-  };
-
-  const handleCut = async () => {
-    await CanvasModule.cutSelected(viewTag);
-    // JSON of cut strokes available here for future paste support
-  };
-
-  const handleCapture = async () => {
-    const filePath = await CanvasModule.captureSelected(viewTag);
-    if (filePath) {
-      await Share.share({ url: `file://${filePath}`, title: 'Captured selection' });
-    }
-  };
 
   return (
     <View
@@ -43,13 +28,25 @@ export default function SelectionPopup({ info, viewTag }: Props) {
         borderColor: theme.border,
       }]}
     >
-      <ActionButton icon="✂️" label="Cut"     onPress={handleCut}     theme={theme} />
-      <Separator theme={theme} />
-      <ActionButton icon="🗑️" label="Delete"  onPress={handleDelete}  theme={theme} />
-      <Separator theme={theme} />
-      <ActionButton icon="📷" label="Capture" onPress={handleCapture} theme={theme} />
-      <Separator theme={theme} />
-      <ActionButton icon="⤢"  label="Resize"  onPress={() => {/* resize via Kotlin handles */}} theme={theme} hint="Drag corner handles" />
+      {onCut && (
+        <>
+          <ActionButton icon="✂️" label="Cut" onPress={onCut} theme={theme} />
+          <Separator theme={theme} />
+        </>
+      )}
+      {onDelete && (
+        <>
+          <ActionButton icon="🗑️" label="Delete" onPress={onDelete} theme={theme} />
+          <Separator theme={theme} />
+        </>
+      )}
+      {onCapture && (
+        <>
+          <ActionButton icon="📷" label="Capture" onPress={onCapture} theme={theme} />
+          <Separator theme={theme} />
+        </>
+      )}
+      <ActionButton icon="⤢" label="Resize" onPress={() => {}} theme={theme} hint="Drag corner handles" />
     </View>
   );
 }
