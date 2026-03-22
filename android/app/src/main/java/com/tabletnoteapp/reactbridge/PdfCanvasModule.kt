@@ -15,10 +15,10 @@ class PdfCanvasModule(private val reactContext: ReactApplicationContext) :
 
     override fun getName() = "PdfCanvasModule"
 
-    @ReactMethod fun undo(viewTag: Int)           { withView(viewTag) { it.undo() } }
-    @ReactMethod fun redo(viewTag: Int)           { withView(viewTag) { it.redo() } }
-    @ReactMethod fun clear(viewTag: Int)          { withView(viewTag) { it.clearCanvas() } }
-    @ReactMethod fun deleteSelected(viewTag: Int) { withView(viewTag) { it.deleteSelected() } }
+    @ReactMethod fun undo(viewTag: Int)                { withView(viewTag) { it.undo() } }
+    @ReactMethod fun redo(viewTag: Int)                { withView(viewTag) { it.redo() } }
+    @ReactMethod fun clear(viewTag: Int)               { withView(viewTag) { it.clearCanvas() } }
+    @ReactMethod fun deleteSelected(viewTag: Int)      { withView(viewTag) { it.deleteSelected() } }
 
     @ReactMethod
     fun getStrokes(viewTag: Int, promise: Promise) {
@@ -37,6 +37,20 @@ class PdfCanvasModule(private val reactContext: ReactApplicationContext) :
     @ReactMethod
     fun scrollToPage(viewTag: Int, page: Int) {
         withView(viewTag) { it.scrollToPage(page) }
+    }
+
+    @ReactMethod
+    fun getScale(viewTag: Int, promise: Promise) {
+        reactContext.runOnUiQueueThread {
+            val view = resolveView(viewTag)
+            if (view != null) promise.resolve(view.scale.toDouble())
+            else promise.reject("ERR_NO_VIEW", "PdfCanvasView not found for tag $viewTag")
+        }
+    }
+
+    @ReactMethod
+    fun setScale(viewTag: Int, scale: Double) {
+        withView(viewTag) { it.applyScale(scale.toFloat()) }
     }
 
     @ReactMethod

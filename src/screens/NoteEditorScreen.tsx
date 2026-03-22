@@ -7,6 +7,7 @@ import {
   SafeAreaView,
   Share,
   findNodeHandle,
+  Animated,
 } from 'react-native';
 import RNFS from 'react-native-fs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -27,6 +28,7 @@ const DRAWINGS_DIR = `${RNFS.DocumentDirectoryPath}/drawings`;
 export default function NoteEditorScreen({ route, navigation }: Props) {
   const { note } = route.params;
   const canvasRef = useRef<any>(null);
+  const strokesLoadedRef = useRef(false);
   const activeTool          = useToolStore(s => s.activeTool);
   const penThickness        = useToolStore(s => s.penThickness);
   const eraserThickness     = useToolStore(s => s.eraserThickness);
@@ -41,20 +43,44 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [showStrip, setShowStrip] = useState(false);
+  const [toolLabel, setToolLabel] = useState('');
+  const labelOpacity = useRef(new Animated.Value(0)).current;
+  const labelAnim = useRef<Animated.CompositeAnimation | null>(null);
+  const handleShowLabel = useCallback((name: string) => {
+    labelAnim.current?.stop();
+    if (!name) {
+      labelOpacity.setValue(0);
+      setToolLabel('');
+      return;
+    }
+    setToolLabel(name);
+    labelOpacity.setValue(1);
+    labelAnim.current = Animated.sequence([
+      Animated.delay(800),
+      Animated.timing(labelOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]);
+    labelAnim.current.start(({ finished }) => { if (finished) setToolLabel(''); });
+  }, [labelOpacity]);
 
-  // Save strokes to file and update the note record
+  // Save strokes and zoom to file and update the note record
   const saveStrokes = useCallback(async () => {
-    const tag = findNodeHandle(canvasRef.current);
-    if (!tag) return;
-    const json = await CanvasModule.getStrokes(tag);
-    // v2 format: { version, pageCount, strokes: [...] }
-    const parsed = JSON.parse(json);
-    const strokes = Array.isArray(parsed) ? parsed : (parsed.strokes ?? []);
-    if (strokes.length === 0) return;
-    await RNFS.mkdir(DRAWINGS_DIR);
-    const filePath = `${DRAWINGS_DIR}/${note.id}.json`;
-    await RNFS.writeFile(filePath, json, 'utf8');
-    updateNote(note.id, { drawingUri: filePath, updatedAt: Date.now() });
+    try {
+      const tag = findNodeHandle(canvasRef.current);
+      if (!tag) return;
+      const [json, scale] = await Promise.all([
+        CanvasModule.getStrokes(tag),
+        CanvasModule.getScale(tag),
+      ]);
+      updateNote(note.id, { lastScale: scale, updatedAt: Date.now() });
+      // v2 format: { version, pageCount, strokes: [...] }
+      const parsed = JSON.parse(json);
+      const strokes = Array.isArray(parsed) ? parsed : (parsed.strokes ?? []);
+      if (strokes.length === 0) return;
+      await RNFS.mkdir(DRAWINGS_DIR);
+      const filePath = `${DRAWINGS_DIR}/${note.id}.json`;
+      await RNFS.writeFile(filePath, json, 'utf8');
+      updateNote(note.id, { drawingUri: filePath });
+    } catch (_) {}
   }, [note.id, updateNote]);
 
   // Save when the user navigates back
@@ -63,15 +89,27 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
     return unsub;
   }, [navigation, saveStrokes]);
 
-  // Load strokes once the canvas is laid out
+  // Periodic auto-save every 30 seconds
+  useEffect(() => {
+    const id = setInterval(saveStrokes, 30_000);
+    return () => clearInterval(id);
+  }, [saveStrokes]);
+
+  // Load strokes once on initial layout only — must not re-run on rotation,
+  // because onSizeChanged in Kotlin already rescales coordinates in-place.
   const handleLayout = useCallback(async () => {
+    if (strokesLoadedRef.current) return;
+    strokesLoadedRef.current = true;
     if (!note.drawingUri) return;
     const exists = await RNFS.exists(note.drawingUri);
     if (!exists) return;
     const json = await RNFS.readFile(note.drawingUri, 'utf8');
     const tag = findNodeHandle(canvasRef.current);
-    if (tag) CanvasModule.loadStrokes(tag, json);
-  }, [note.drawingUri]);
+    if (tag) {
+      CanvasModule.loadStrokes(tag, json);
+      if (note.lastScale) CanvasModule.setScale(tag, note.lastScale);
+    }
+  }, [note.drawingUri, note.lastScale]);
 
   const handleUndo = useCallback(() => {
     const tag = findNodeHandle(canvasRef.current);
@@ -111,12 +149,18 @@ export default function NoteEditorScreen({ route, navigation }: Props) {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onToggleStrip={() => setShowStrip(s => !s)}
+        onShowLabel={handleShowLabel}
         showStrip={showStrip}
         currentPage={currentPage}
         totalPages={totalPages}
       />
 
       <View style={styles.canvasContainer}>
+        {!!toolLabel && (
+          <Animated.View style={[styles.toolLabel, { opacity: labelOpacity }]} pointerEvents="none">
+            <Text style={styles.toolLabelText}>{toolLabel}</Text>
+          </Animated.View>
+        )}
         <CanvasView
           ref={canvasRef}
           tool={activeTool}
@@ -193,5 +237,23 @@ const styles = StyleSheet.create({
   },
   canvas: {
     flex: 1,
+  },
+  toolLabel: {
+    position: 'absolute',
+    top: 12,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  toolLabelText: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 8,
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
 });

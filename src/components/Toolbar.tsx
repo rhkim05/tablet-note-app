@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Modal } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, Modal, ScrollView } from 'react-native';
 import { useToolStore } from '../store/useToolStore';
 import ThicknessSlider from './ThicknessSlider';
 import ColorPickerPanel from './ColorPickerPanel';
@@ -9,28 +9,30 @@ interface ToolbarProps {
   onUndo?: () => void;
   onRedo?: () => void;
   onToggleStrip?: () => void;
+  onShowLabel?: (name: string) => void;
   showHandTool?: boolean;
   currentPage?: number;
   totalPages?: number;
   showStrip?: boolean;
 }
 
-export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, currentPage, totalPages, showStrip }: ToolbarProps) {
+export default function Toolbar({ onUndo, onRedo, onToggleStrip, onShowLabel, showHandTool, currentPage, totalPages, showStrip }: ToolbarProps) {
   const {
     activeTool, canUndo, canRedo,
     penThickness, eraserThickness, eraserMode,
     penColor, presetColors,
-    highlighterColor, highlighterThickness,
+    highlighterColor, highlighterPresets, highlighterThickness,
     setTool, setCanUndo: _cu, setCanRedo: _cr,
     setPenThickness, setEraserThickness, setEraserMode,
-    setPenColor, setPresetColor,
-    setHighlighterColor, setHighlighterThickness,
+    setPenColor, setPresetColor, addPresetColor, removePresetColor,
+    setHighlighterColor, setHighlighterPresetColor, addHighlighterPreset, removeHighlighterPreset, setHighlighterThickness,
   } = useToolStore();
 
   const [penExpanded, setPenExpanded]           = useState(false);
   const [showColorPicker, setShowColorPicker]   = useState(false);
   const [pickerKey, setPickerKey]               = useState(0);
   const [popupPos, setPopupPos]                 = useState({ top: 60, left: 0 });
+  const [penPresetIdx, setPenPresetIdx]         = useState<number | null>(null);
 
   const [eraserExpanded, setEraserExpanded]     = useState(false);
   const [eraserPopupPos, setEraserPopupPos]     = useState({ top: 60, left: 0 });
@@ -39,10 +41,13 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
   const [showHlColorPicker, setShowHlColorPicker] = useState(false);
   const [hlPickerKey, setHlPickerKey]           = useState(0);
   const [hlPopupPos, setHlPopupPos]             = useState({ top: 60, left: 0 });
+  const [hlPresetIdx, setHlPresetIdx]           = useState<number | null>(null);
 
-  const penBtnRef    = useRef<TouchableOpacity>(null);
-  const eraserBtnRef = useRef<TouchableOpacity>(null);
-  const hlBtnRef     = useRef<TouchableOpacity>(null);
+  const penBtnRef      = useRef<TouchableOpacity>(null);
+  const eraserBtnRef   = useRef<TouchableOpacity>(null);
+  const hlBtnRef       = useRef<TouchableOpacity>(null);
+  const penScrollRef   = useRef<ScrollView>(null);
+  const hlScrollRef    = useRef<ScrollView>(null);
 
   const theme = useTheme();
   const isPen        = activeTool === 'pen';
@@ -57,8 +62,6 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
   const closeEraserPopup  = () => setEraserExpanded(false);
   const closeHlPopup      = () => { setHlExpanded(false); setShowHlColorPicker(false); };
 
-  const HIGHLIGHTER_PRESETS = ['#FFFF00', '#A8F0A0', '#FFB3DE', '#A0D4FF', '#FFD580'];
-
   const handleEraserPress = () => {
     if (isEraser) {
       if (!eraserExpanded) {
@@ -66,11 +69,12 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
           setEraserPopupPos({ top: y + h + 6, left: x });
         });
       }
+      onShowLabel?.('');
       setEraserExpanded(v => !v);
     } else {
       setTool('eraser');
-      closeEraserPopup();
-      closePenPopup();
+      onShowLabel?.('Eraser');
+      closeEraserPopup(); closePenPopup(); closeHlPopup();
     }
   };
 
@@ -81,13 +85,13 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
           setPopupPos({ top: y + h + 6, left: x });
         });
       }
+      onShowLabel?.('');
       setPenExpanded(v => !v);
       setShowColorPicker(false);
     } else {
       setTool('pen');
-      closePenPopup();
-      closeEraserPopup();
-      closeHlPopup();
+      onShowLabel?.('Pen');
+      closePenPopup(); closeEraserPopup(); closeHlPopup();
     }
   };
 
@@ -98,122 +102,106 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
           setHlPopupPos({ top: y + h + 6, left: x });
         });
       }
+      onShowLabel?.('');
       setHlExpanded(v => !v);
       setShowHlColorPicker(false);
     } else {
       setTool('highlighter');
-      closePenPopup();
-      closeEraserPopup();
-      closeHlPopup();
+      onShowLabel?.('Highlight');
+      closePenPopup(); closeEraserPopup(); closeHlPopup();
     }
   };
 
   const activeStyle = { backgroundColor: theme.text };
-  const activeLabelStyle = { color: theme.surface };
-  const inactiveLabelStyle = { color: theme.text };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
-      {/* ── Pages strip toggle (leftmost) ── */}
-      {onToggleStrip != null && totalPages != null && totalPages > 0 && (
-        <>
-          <TouchableOpacity
-            style={[styles.iconBtn, showStrip && activeStyle]}
-            onPress={onToggleStrip}
-          >
-            <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
-            <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
-            <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
-          </TouchableOpacity>
-          <View style={[styles.divider, { backgroundColor: theme.border }]} />
-        </>
-      )}
+    <View style={{ backgroundColor: theme.surface, borderBottomWidth: 1, borderBottomColor: theme.border }}>
+      {/* ── Main toolbar row ── */}
+      <View style={styles.container}>
 
-      {/* ── Scroll ── */}
-      <TouchableOpacity
-        style={[styles.button, activeTool === 'scroll' && activeStyle]}
-        onPress={() => { setTool('scroll'); closePenPopup(); closeEraserPopup(); closeHlPopup(); }}
-      >
-        <Text style={styles.buttonIcon}>✋</Text>
-        <Text style={[styles.buttonLabel, activeTool === 'scroll' ? activeLabelStyle : inactiveLabelStyle]}>
-          Scroll
-        </Text>
-      </TouchableOpacity>
-
-      {/* ── Select ── */}
-      <TouchableOpacity
-        style={[styles.button, activeTool === 'select' && activeStyle]}
-        onPress={() => { setTool('select'); closePenPopup(); closeEraserPopup(); closeHlPopup(); }}
-      >
-        <Text style={styles.buttonIcon}>✦</Text>
-        <Text style={[styles.buttonLabel, activeTool === 'select' ? activeLabelStyle : inactiveLabelStyle]}>
-          Select
-        </Text>
-      </TouchableOpacity>
-
-      <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-      {/* ── Draw tools ── */}
-      <TouchableOpacity
-        ref={penBtnRef}
-        style={[styles.button, isPen && activeStyle]}
-        onPress={handlePenPress}
-      >
-        <Text style={styles.buttonIcon}>✏️</Text>
-        <Text style={[styles.buttonLabel, isPen ? activeLabelStyle : inactiveLabelStyle]}>Pen</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        ref={hlBtnRef}
-        style={[styles.button, isHighlighter && activeStyle]}
-        onPress={handleHighlighterPress}
-      >
-        <Text style={styles.buttonIcon}>🖊️</Text>
-        <Text style={[styles.buttonLabel, isHighlighter ? activeLabelStyle : inactiveLabelStyle]}>Highlight</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        ref={eraserBtnRef}
-        style={[styles.button, isEraser && activeStyle]}
-        onPress={handleEraserPress}
-      >
-        <Text style={styles.buttonIcon}>⬜</Text>
-        <Text style={[styles.buttonLabel, isEraser ? activeLabelStyle : inactiveLabelStyle]}>Eraser</Text>
-      </TouchableOpacity>
-
-      {(isPen || isEraser || isHighlighter) && (
-        <View style={[styles.fingerHint, { backgroundColor: theme.surfaceAlt }]}>
-          <Text style={[styles.fingerHintText, { color: theme.textSub }]}>👆 finger scrolls</Text>
+        {/* Left: strip toggle */}
+        <View style={styles.sideSection}>
+          {onToggleStrip != null && totalPages != null && totalPages > 0 && (
+            <TouchableOpacity
+              style={[styles.iconBtn, showStrip && activeStyle]}
+              onPress={onToggleStrip}
+            >
+              <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
+              <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
+              <View style={[styles.hamburgerLine, { backgroundColor: showStrip ? theme.surface : theme.text }]} />
+            </TouchableOpacity>
+          )}
         </View>
-      )}
 
-      <View style={styles.spacer} />
+        {/* Center: tool buttons */}
+        <View style={styles.centerSection}>
+          <TouchableOpacity
+            style={[styles.button, activeTool === 'scroll' && activeStyle]}
+            onPress={() => { if (activeTool !== 'scroll') { setTool('scroll'); onShowLabel?.('Scroll'); } closePenPopup(); closeEraserPopup(); closeHlPopup(); }}
+          >
+            <Text style={styles.buttonIcon}>✋</Text>
+          </TouchableOpacity>
 
-      {/* ── Undo / Redo ── */}
-      <TouchableOpacity
-        style={[styles.button, !canUndo && styles.buttonDisabled]}
-        disabled={!canUndo}
-        onPress={onUndo}
-      >
-        <Text style={styles.buttonIcon}>↩️</Text>
-        <Text style={[styles.buttonLabel, inactiveLabelStyle, !canUndo && styles.buttonLabelDisabled]}>Undo</Text>
-      </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.button, activeTool === 'select' && activeStyle]}
+            onPress={() => { if (activeTool !== 'select') { setTool('select'); onShowLabel?.('Select'); } closePenPopup(); closeEraserPopup(); closeHlPopup(); }}
+          >
+            <Text style={styles.buttonIcon}>✦</Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.button, !canRedo && styles.buttonDisabled]}
-        disabled={!canRedo}
-        onPress={onRedo}
-      >
-        <Text style={styles.buttonIcon}>↪️</Text>
-        <Text style={[styles.buttonLabel, inactiveLabelStyle, !canRedo && styles.buttonLabelDisabled]}>Redo</Text>
-      </TouchableOpacity>
-
-      {totalPages != null && totalPages > 0 && (
-        <>
           <View style={[styles.divider, { backgroundColor: theme.border }]} />
-          <Text style={[styles.pageIndex, { color: theme.textSub }]}>{currentPage} / {totalPages}</Text>
-        </>
-      )}
+
+          <TouchableOpacity
+            ref={penBtnRef}
+            style={[styles.button, isPen && activeStyle]}
+            onPress={handlePenPress}
+          >
+            <Text style={styles.buttonIcon}>✏️</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            ref={hlBtnRef}
+            style={[styles.button, isHighlighter && activeStyle]}
+            onPress={handleHighlighterPress}
+          >
+            <Text style={styles.buttonIcon}>🖊️</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            ref={eraserBtnRef}
+            style={[styles.button, isEraser && activeStyle]}
+            onPress={handleEraserPress}
+          >
+            <Text style={styles.buttonIcon}>⬜</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Right: undo, redo, page */}
+        <View style={[styles.sideSection, { justifyContent: 'flex-end' }]}>
+          <TouchableOpacity
+            style={[styles.button, !canUndo && styles.buttonDisabled]}
+            disabled={!canUndo}
+            onPress={onUndo}
+          >
+            <Text style={styles.buttonIcon}>↩️</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, !canRedo && styles.buttonDisabled]}
+            disabled={!canRedo}
+            onPress={onRedo}
+          >
+            <Text style={styles.buttonIcon}>↪️</Text>
+          </TouchableOpacity>
+
+          {totalPages != null && totalPages > 0 && (
+            <>
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+              <Text style={[styles.pageIndex, { color: theme.textSub }]}>{currentPage} / {totalPages}</Text>
+            </>
+          )}
+        </View>
+      </View>
 
       {/* ── Pen options popup ── */}
       <Modal
@@ -224,30 +212,60 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
       >
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closePenPopup} activeOpacity={1} />
 
-        {/* Color swatch + thickness card */}
-        <View style={[styles.penPopup, { top: popupPos.top, left: popupPos.left, backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <TouchableOpacity
-            style={[styles.colorBtn, { backgroundColor: penColor }]}
-            onPress={() => { setPickerKey(k => k + 1); setShowColorPicker(v => !v); }}
-          />
-          <View style={[styles.popupDivider, { backgroundColor: theme.border }]} />
-          <ThicknessSlider
-            value={penThickness}
-            min={1} max={30}
-            color="#1A1A1A"
-            onChange={setPenThickness}
-          />
+        <View style={[styles.popupRow, { top: popupPos.top }]}>
+          <View style={[styles.penPopup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.popupTitle, { color: theme.textSub }]}>Pen</Text>
+            <View style={[styles.hDivider, { backgroundColor: theme.border }]} />
+            <ScrollView
+              ref={penScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.presetScroll}
+              contentContainerStyle={styles.presetScrollContent}
+            >
+              {presetColors.map((c, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.presetDot, { backgroundColor: c }, penColor === c && styles.presetDotActive]}
+                  onPress={() => { setPenColor(c); setPenPresetIdx(i); setPickerKey(k => k + 1); setShowColorPicker(true); }}
+                />
+              ))}
+              <TouchableOpacity
+                style={styles.addPresetBtn}
+                onPress={() => {
+                  setPenPresetIdx(presetColors.length);
+                  addPresetColor(penColor);
+                  setPickerKey(k => k + 1);
+                  setShowColorPicker(true);
+                  setTimeout(() => penScrollRef.current?.scrollToEnd({ animated: true }), 50);
+                }}
+              >
+                <Text style={styles.addPresetText}>+</Text>
+              </TouchableOpacity>
+            </ScrollView>
+            <View style={[styles.hDivider, { backgroundColor: theme.border }]} />
+            <ThicknessSlider
+              value={penThickness}
+              min={1} max={30}
+              color="#1A1A1A"
+              onChange={setPenThickness}
+            />
+          </View>
         </View>
 
-        {/* Color picker — shown below the card when color swatch is tapped */}
         {showColorPicker && (
-          <View style={[styles.pickerAnchor, { top: popupPos.top + 52, left: popupPos.left }]}>
+          <View style={[styles.popupRow, { top: popupPos.top + 155 }]}>
             <ColorPickerPanel
               key={pickerKey}
               color={penColor}
               presetColors={presetColors}
               onColorChange={setPenColor}
               onPresetSave={(i, c) => setPresetColor(i, c)}
+              onPresetDelete={penPresetIdx !== null ? () => {
+                removePresetColor(penPresetIdx);
+                setPenPresetIdx(null);
+                setShowColorPicker(false);
+              } : undefined}
             />
           </View>
         )}
@@ -262,37 +280,60 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
       >
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closeHlPopup} activeOpacity={1} />
 
-        <View style={[styles.penPopup, { top: hlPopupPos.top, left: hlPopupPos.left, backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {/* Color swatch */}
-          <TouchableOpacity
-            style={[styles.colorBtn, { backgroundColor: highlighterColor }]}
-            onPress={() => { setHlPickerKey(k => k + 1); setShowHlColorPicker(v => !v); }}
-          />
-          {/* Preset highlighter colors */}
-          {HIGHLIGHTER_PRESETS.map(c => (
-            <TouchableOpacity
-              key={c}
-              style={[styles.presetDot, { backgroundColor: c }, highlighterColor === c && styles.presetDotActive]}
-              onPress={() => setHighlighterColor(c)}
+        <View style={[styles.popupRow, { top: hlPopupPos.top }]}>
+          <View style={[styles.penPopup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.popupTitle, { color: theme.textSub }]}>Highlight</Text>
+            <View style={[styles.hDivider, { backgroundColor: theme.border }]} />
+            <ScrollView
+              ref={hlScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.presetScroll}
+              contentContainerStyle={styles.presetScrollContent}
+            >
+              {highlighterPresets.map((c, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.presetDot, { backgroundColor: c }, highlighterColor === c && styles.presetDotActive]}
+                  onPress={() => { setHighlighterColor(c); setHlPresetIdx(i); setHlPickerKey(k => k + 1); setShowHlColorPicker(true); }}
+                />
+              ))}
+              <TouchableOpacity
+                style={styles.addPresetBtn}
+                onPress={() => {
+                  setHlPresetIdx(highlighterPresets.length);
+                  addHighlighterPreset(highlighterColor);
+                  setHlPickerKey(k => k + 1);
+                  setShowHlColorPicker(true);
+                  setTimeout(() => hlScrollRef.current?.scrollToEnd({ animated: true }), 50);
+                }}
+              >
+                <Text style={styles.addPresetText}>+</Text>
+              </TouchableOpacity>
+            </ScrollView>
+            <View style={[styles.hDivider, { backgroundColor: theme.border }]} />
+            <ThicknessSlider
+              value={highlighterThickness}
+              min={8} max={48}
+              color={highlighterColor}
+              onChange={setHighlighterThickness}
             />
-          ))}
-          <View style={[styles.popupDivider, { backgroundColor: theme.border }]} />
-          <ThicknessSlider
-            value={highlighterThickness}
-            min={8} max={48}
-            color={highlighterColor}
-            onChange={setHighlighterThickness}
-          />
+          </View>
         </View>
 
         {showHlColorPicker && (
-          <View style={[styles.pickerAnchor, { top: hlPopupPos.top + 52, left: hlPopupPos.left }]}>
+          <View style={[styles.popupRow, { top: hlPopupPos.top + 155 }]}>
             <ColorPickerPanel
               key={hlPickerKey}
               color={highlighterColor}
-              presetColors={HIGHLIGHTER_PRESETS}
+              presetColors={highlighterPresets}
               onColorChange={setHighlighterColor}
-              onPresetSave={() => {}}
+              onPresetSave={(i, c) => setHighlighterPresetColor(i, c)}
+              onPresetDelete={hlPresetIdx !== null ? () => {
+                removeHighlighterPreset(hlPresetIdx);
+                setHlPresetIdx(null);
+                setShowHlColorPicker(false);
+              } : undefined}
             />
           </View>
         )}
@@ -307,31 +348,18 @@ export default function Toolbar({ onUndo, onRedo, onToggleStrip, showHandTool, c
       >
         <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closeEraserPopup} activeOpacity={1} />
 
-        <View style={[styles.penPopup, { top: eraserPopupPos.top, left: eraserPopupPos.left, backgroundColor: theme.surface, borderColor: theme.border }]}>
-          {/* Mode selector */}
-          <TouchableOpacity
-            style={[styles.eraserModeBtn, { borderColor: theme.border }, eraserMode === 'pixel' && activeStyle]}
-            onPress={() => setEraserMode('pixel')}
-          >
-            <Text style={[styles.eraserModeText, { color: theme.textSub }, eraserMode === 'pixel' && activeLabelStyle]}>
-              픽셀
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.eraserModeBtn, { borderColor: theme.border }, eraserMode === 'stroke' && activeStyle]}
-            onPress={() => setEraserMode('stroke')}
-          >
-            <Text style={[styles.eraserModeText, { color: theme.textSub }, eraserMode === 'stroke' && activeLabelStyle]}>
-              획
-            </Text>
-          </TouchableOpacity>
-          <View style={[styles.popupDivider, { backgroundColor: theme.border }]} />
-          <ThicknessSlider
-            value={eraserThickness}
-            min={10} max={100}
-            color="eraser"
-            onChange={setEraserThickness}
-          />
+        <View style={[styles.popupRow, { top: eraserPopupPos.top }]}>
+          <View style={[styles.penPopup, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.popupTitle, { color: theme.textSub }]}>Eraser</Text>
+            <View style={[styles.hDivider, { backgroundColor: theme.border }]} />
+            <ThicknessSlider
+              value={eraserThickness}
+              min={20} max={300}
+              color="eraser"
+              showLabel={false}
+              onChange={setEraserThickness}
+            />
+          </View>
         </View>
       </Modal>
     </View>
@@ -342,24 +370,35 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    gap: 4,
   },
-  spacer: { flex: 1 },
-  button: {
+  sideSection: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    gap: 4,
+  },
+  centerSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  popupTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  button: {
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 8,
-    gap: 6,
   },
   buttonDisabled: { opacity: 0.3 },
-  buttonIcon:  { fontSize: 16 },
-  buttonLabel: { fontSize: 13, fontWeight: '500' },
-  buttonLabelDisabled: { opacity: 0.4 },
+  buttonIcon: { fontSize: 16 },
   divider: {
     width: 1, height: 24,
     marginHorizontal: 6,
@@ -377,29 +416,16 @@ const styles = StyleSheet.create({
     height: 2,
     borderRadius: 1,
   },
-  colorBtn: {
-    width: 28, height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#CCCCCC',
-  },
   presetDot: {
-    width: 20, height: 20,
-    borderRadius: 10,
+    width: 24, height: 24,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: '#CCCCCC',
   },
   presetDotActive: {
-    borderColor: '#555',
-    borderWidth: 2.5,
+    borderColor: '#333',
+    borderWidth: 3,
   },
-  fingerHint: {
-    marginLeft: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  fingerHintText: { fontSize: 11 },
   pageIndex: {
     fontSize: 13,
     fontWeight: '600',
@@ -407,13 +433,11 @@ const styles = StyleSheet.create({
   },
   // Pen popup
   penPopup: {
-    position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    width: 250,
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
@@ -421,21 +445,40 @@ const styles = StyleSheet.create({
     elevation: 6,
     borderWidth: 1,
   },
-  popupDivider: {
-    width: 1,
-    height: 20,
+  hDivider: {
+    height: 1,
+    marginVertical: 10,
   },
-  pickerAnchor: {
+  presetScroll: {
+    // exactly 6 dots (24px) + 5 gaps (10px) = 194px
+    width: 194,
+    alignSelf: 'center',
+  },
+  presetScrollContent: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 2,
+  },
+  addPresetBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#AAAAAA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addPresetText: {
+    fontSize: 16,
+    lineHeight: 18,
+    color: '#888888',
+    includeFontPadding: false,
+  },
+  popupRow: {
     position: 'absolute',
-  },
-  eraserModeBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 7,
-    borderWidth: 1,
-  },
-  eraserModeText: {
-    fontSize: 12,
-    fontWeight: '500',
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
 });

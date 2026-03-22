@@ -48,6 +48,7 @@ class DrawingCanvas(context: Context) : View(context) {
     private var lastScrollTouchY = 0f
     private val OVERSCROLL_THRESHOLD get() = 120 * resources.displayMetrics.density
     private var lastEmittedPage = -1
+    private var logicalWidth = 0   // view width at which current stroke coordinates were recorded
 
     private fun totalDocHeight(): Float {
         if (pageHeightPx == 0f) return height.toFloat().coerceAtLeast(1f)
@@ -227,7 +228,63 @@ class DrawingCanvas(context: Context) : View(context) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w == 0) return
         val fromScratch = oldw != 0 && w != oldw
+        // Rescale all stroke coordinates so they stay at the same relative position on the page
+        if (fromScratch && logicalWidth > 0 && w != logicalWidth) {
+            scaleAllCoordinates(w.toFloat() / logicalWidth)
+        }
+        logicalWidth = w
         reLayoutPages(w, fromScratch)
+    }
+
+    // Scale every stored coordinate (strokes, scroll, undo/redo stack) by ratio when the
+    // view width changes (e.g. orientation change). Must be called before reLayoutPages.
+    private fun scaleAllCoordinates(ratio: Float) {
+        val logCenterYOld = if (scale > 0f) (scrollY + height / 2f) / scale else 0f
+
+        // Page heights scale with view width; inter-page gaps are fixed physical dp and do NOT
+        // scale. Simple y*ratio accumulates an error of N*gap*(1-ratio) per page N.
+        // Fix: remap within each page (scales by ratio), then re-add the unchanged gaps.
+        val oldPageH = pageHeightPx   // reLayoutPages hasn't run yet — still the old value
+        val gap      = PAGE_GAP
+
+        fun remapY(y: Float): Float {
+            if (oldPageH + gap <= 0f) return y * ratio
+            val pageIdx = (y / (oldPageH + gap)).toInt().coerceAtLeast(0)
+            val yInPage = y - pageIdx * (oldPageH + gap)
+            return pageIdx * (oldPageH * ratio + gap) + yInPage * ratio
+        }
+
+        for (stroke in committedStrokes) {
+            for (i in stroke.points.indices) {
+                val p = stroke.points[i]
+                stroke.points[i] = p.copy(x = p.x * ratio, y = remapY(p.y))
+            }
+            // Pen/highlighter thickness is page-relative → scale with ratio.
+            // Eraser thickness is screen-relative → leave unchanged.
+            if (stroke.style.tool != ToolType.ERASER) {
+                stroke.style = stroke.style.copy(thickness = stroke.style.thickness * ratio)
+            }
+        }
+
+        // Restore scroll so the same content stays at screen centre.
+        scrollY    = remapY(logCenterYOld) * scale - height / 2f
+        rawScrollY = scrollY
+
+        for (i in undoStack.indices) undoStack[i] = scaleUndoAction(undoStack[i], ratio)
+        for (i in redoStack.indices) redoStack[i] = scaleUndoAction(redoStack[i], ratio)
+        if (!selectionBounds.isEmpty) {
+            selectionBounds.set(
+                selectionBounds.left  * ratio, remapY(selectionBounds.top),
+                selectionBounds.right * ratio, remapY(selectionBounds.bottom),
+            )
+        }
+    }
+
+    private fun scaleUndoAction(action: UndoAction, ratio: Float): UndoAction = when (action) {
+        is UndoAction.AddStroke     -> action  // stroke points already scaled above
+        is UndoAction.EraseStrokes  -> action  // stroke points already scaled above
+        is UndoAction.MoveStrokes   -> action.copy(dx = action.dx * ratio, dy = action.dy * ratio)
+        is UndoAction.ResizeStrokes -> action.copy(pivotX = action.pivotX * ratio, pivotY = action.pivotY * ratio)
     }
 
     private fun reLayoutPages(viewWidth: Int, fromScratch: Boolean = false) {
@@ -254,6 +311,7 @@ class DrawingCanvas(context: Context) : View(context) {
         scrollY = scrollY.coerceIn(0f, maxScrollY())
         rawScrollY = scrollY
         invalidate()
+        notifyUndoRedoState()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -291,9 +349,9 @@ class DrawingCanvas(context: Context) : View(context) {
 
         canvas.restore()  // remove translate + scale
 
-        // 5. Eraser cursor (screen space) — radius scaled with zoom for pixel eraser
+        // 5. Eraser cursor — fixed screen size regardless of zoom
         if (showEraserCursor) {
-            val r = if (eraserMode == "stroke") eraserThickness else eraserThickness * scale / 2f
+            val r = eraserThickness / 2f
             canvas.drawCircle(eraserCursorX, eraserCursorY, r, strokeEraserFillPaint)
             canvas.drawCircle(eraserCursorX, eraserCursorY, r, strokeEraserBorderPaint)
         }
@@ -358,10 +416,13 @@ class DrawingCanvas(context: Context) : View(context) {
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        when (currentTool) {
-            ToolType.SCROLL -> handleScroll(event)
-            ToolType.SELECT -> handleSelect(event)
-            else            -> handleDraw(event)
+        // Finger always scrolls/pans regardless of active tool.
+        // Stylus (pen tip or eraser end) uses the active tool.
+        val isFinger = event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER
+        when {
+            isFinger || currentTool == ToolType.SCROLL -> handleScroll(event)
+            currentTool == ToolType.SELECT             -> handleSelect(event)
+            else                                       -> handleDraw(event)
         }
         return true
     }
@@ -568,7 +629,7 @@ class DrawingCanvas(context: Context) : View(context) {
                     eraserCursorX = event.x; eraserCursorY = event.y; showEraserCursor = true
                 }
                 val (color, thickness, tool) = when (currentTool) {
-                    ToolType.ERASER      -> Triple(Color.TRANSPARENT, eraserThickness, ToolType.ERASER)
+                    ToolType.ERASER      -> Triple(Color.TRANSPARENT, eraserThickness / scale, ToolType.ERASER)
                     ToolType.HIGHLIGHTER -> Triple(highlighterColor, highlighterThickness, ToolType.HIGHLIGHTER)
                     else                 -> Triple(penColor, penThickness, ToolType.PEN)
                 }
@@ -759,7 +820,8 @@ class DrawingCanvas(context: Context) : View(context) {
     // ── Stroke-eraser hit test ────────────────────────────────────────────────
 
     private fun eraseStrokesAtPoint(x: Float, y: Float) {
-        val thresholdSq = eraserThickness * eraserThickness
+        val t = eraserThickness / (2f * scale)
+        val thresholdSq = t * t
         val toRemove = committedStrokes.filter { it.style.tool != ToolType.ERASER && strokeHitsPoint(it, x, y, thresholdSq) }
         if (toRemove.isNotEmpty()) {
             committedStrokes.removeAll(toRemove.toSet())
@@ -935,6 +997,10 @@ class DrawingCanvas(context: Context) : View(context) {
 
     private fun notifyUndoRedoState() {
         onUndoRedoStateChanged?.invoke(canUndo(), canRedo())
+    }
+
+    fun applyScale(s: Float) {
+        scale = s; constrain(); invalidate()
     }
 
     fun scrollToPage(page: Int) {

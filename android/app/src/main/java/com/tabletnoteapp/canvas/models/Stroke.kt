@@ -10,7 +10,7 @@ data class StrokeStyle(
 
 data class Stroke(
     val points: MutableList<Point> = mutableListOf(),
-    val style: StrokeStyle,
+    var style: StrokeStyle,
 ) {
     fun addPoint(point: Point) = points.add(point)
     val isEmpty get() = points.isEmpty()

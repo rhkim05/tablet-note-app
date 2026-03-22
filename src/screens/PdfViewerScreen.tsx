@@ -12,6 +12,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import RNFS from 'react-native-fs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -36,9 +37,28 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [showStrip, setShowStrip] = useState(false);
   const [showPageInput, setShowPageInput] = useState(false);
+  const [toolLabel, setToolLabel] = useState('');
+  const labelOpacity = useRef(new Animated.Value(0)).current;
+  const labelAnim = useRef<Animated.CompositeAnimation | null>(null);
+  const handleShowLabel = useCallback((name: string) => {
+    labelAnim.current?.stop();
+    if (!name) {
+      labelOpacity.setValue(0);
+      setToolLabel('');
+      return;
+    }
+    setToolLabel(name);
+    labelOpacity.setValue(1);
+    labelAnim.current = Animated.sequence([
+      Animated.delay(800),
+      Animated.timing(labelOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+    ]);
+    labelAnim.current.start(({ finished }) => { if (finished) setToolLabel(''); });
+  }, [labelOpacity]);
   const [pageInputText, setPageInputText] = useState('');
   const [selectionInfo, setSelectionInfo] = useState<SelectionInfo | null>(null);
   const viewRef = useRef<any>(null);
+  const strokesLoadedRef = useRef(false);
   const updateNote = useNotebookStore(s => s.updateNote);
   const activeTool           = useToolStore(s => s.activeTool);
   const penThickness         = useToolStore(s => s.penThickness);
@@ -71,45 +91,59 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
         if (!note.totalPages || note.totalPages !== tp) {
           updateNote(note.id, { totalPages: tp });
         }
-        // Jump to last checkpoint
-        if (note.lastPage && note.lastPage > 1) {
-          const tag = findNodeHandle(viewRef.current);
-          if (tag) PdfCanvasModule.scrollToPage(tag, note.lastPage);
+        // Restore last zoom and page
+        const tag = findNodeHandle(viewRef.current);
+        if (tag) {
+          if (note.lastScale) PdfCanvasModule.setScale(tag, note.lastScale);
+          if (note.lastPage && note.lastPage > 1) PdfCanvasModule.scrollToPage(tag, note.lastPage);
         }
       },
     );
     return () => { pageSub.remove(); selSub.remove(); loadSub.remove(); };
   }, [note.lastPage]);
 
-  // Load saved strokes once the view is laid out
+  // Load saved strokes once on initial layout only — must not re-run on rotation,
+  // because reLayoutPages in Kotlin already rescales coordinates in-place.
   const handleViewLayout = useCallback(async () => {
+    if (strokesLoadedRef.current) return;
+    strokesLoadedRef.current = true;
     if (!note.drawingUri) return;
     const exists = await RNFS.exists(note.drawingUri);
     if (!exists) return;
     const json = await RNFS.readFile(note.drawingUri, 'utf8');
-    // Only load flat-array format (document coordinates); skip legacy per-page format
-    if (!json.startsWith('[')) return;
     const tag = findNodeHandle(viewRef.current);
     if (tag) PdfCanvasModule.loadStrokes(tag, json);
   }, [note.drawingUri]);
 
-  // Save strokes and page checkpoint when navigating back
+  // Save strokes, page and zoom checkpoint when navigating back
   const saveStrokes = useCallback(async () => {
-    updateNote(note.id, { lastPage: currentPage, updatedAt: Date.now() });
-    const tag = findNodeHandle(viewRef.current);
-    if (!tag) return;
-    const json = await PdfCanvasModule.getStrokes(tag);
-    if (json === '[]') return;
-    await RNFS.mkdir(DRAWINGS_DIR);
-    const filePath = `${DRAWINGS_DIR}/${note.id}.json`;
-    await RNFS.writeFile(filePath, json, 'utf8');
-    updateNote(note.id, { drawingUri: filePath });
+    try {
+      updateNote(note.id, { lastPage: currentPage, updatedAt: Date.now() });
+      const tag = findNodeHandle(viewRef.current);
+      if (!tag) return;
+      const [json, scale] = await Promise.all([
+        PdfCanvasModule.getStrokes(tag),
+        PdfCanvasModule.getScale(tag),
+      ]);
+      updateNote(note.id, { lastScale: scale });
+      if (json === '[]') return;
+      await RNFS.mkdir(DRAWINGS_DIR);
+      const filePath = `${DRAWINGS_DIR}/${note.id}.json`;
+      await RNFS.writeFile(filePath, json, 'utf8');
+      updateNote(note.id, { drawingUri: filePath });
+    } catch (_) {}
   }, [note.id, currentPage, updateNote]);
 
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', saveStrokes);
     return unsub;
   }, [navigation, saveStrokes]);
+
+  // Periodic auto-save every 30 seconds
+  useEffect(() => {
+    const id = setInterval(saveStrokes, 30_000);
+    return () => clearInterval(id);
+  }, [saveStrokes]);
 
   const handleGoToPage = useCallback(() => {
     const page = parseInt(pageInputText, 10);
@@ -146,12 +180,18 @@ export default function PdfViewerScreen({ route, navigation }: Props) {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onToggleStrip={() => setShowStrip(s => !s)}
+        onShowLabel={handleShowLabel}
         showStrip={showStrip}
         currentPage={currentPage}
         totalPages={totalPages}
       />
 
       <View style={styles.pdfContainer}>
+        {!!toolLabel && (
+          <Animated.View style={[styles.toolLabel, { opacity: labelOpacity }]} pointerEvents="none">
+            <Text style={styles.toolLabelText}>{toolLabel}</Text>
+          </Animated.View>
+        )}
         {loading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#FFFFFF" />
@@ -253,6 +293,24 @@ const styles = StyleSheet.create({
   title: { flex: 1, color: '#FFFFFF', fontSize: 16, fontWeight: '600', textAlign: 'center' },
   headerRight: { minWidth: 60 },
   pdfContainer: { flex: 1 },
+  toolLabel: {
+    position: 'absolute',
+    top: 12,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  toolLabelText: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 8,
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
   pageIndex: {
     position: 'absolute',
     bottom: 16,

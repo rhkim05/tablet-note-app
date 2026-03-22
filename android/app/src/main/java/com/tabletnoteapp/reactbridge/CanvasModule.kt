@@ -55,6 +55,20 @@ class CanvasModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun getScale(viewTag: Int, promise: Promise) {
+        reactContext.runOnUiQueueThread {
+            val view = reactContext.getNativeModule(UIManagerModule::class.java)?.resolveView(viewTag) as? DrawingCanvas
+            if (view != null) promise.resolve(view.scale.toDouble())
+            else promise.reject("ERR_NO_VIEW", "Canvas view not found for tag $viewTag")
+        }
+    }
+
+    @ReactMethod
+    fun setScale(viewTag: Int, scale: Double) {
+        withCanvas(viewTag) { it.applyScale(scale.toFloat()) }
+    }
+
+    @ReactMethod
     fun deleteSelected(viewTag: Int) {
         withCanvas(viewTag) { it.deleteSelected() }
     }
