@@ -7,13 +7,14 @@ interface Props {
   min: number;
   max: number;
   color?: string;
+  showLabel?: boolean;
   onChange: (value: number) => void;
 }
 
 const TRACK_W = 130;
 const THUMB_R = 10;
 
-export default function ThicknessSlider({ value, min, max, color = '#1A1A1A', onChange }: Props) {
+export default function ThicknessSlider({ value, min, max, color = '#1A1A1A', showLabel = true, onChange }: Props) {
   const theme = useTheme();
   const baseValue  = useRef(value);
   const valueRef   = useRef(value);
@@ -65,7 +66,7 @@ export default function ThicknessSlider({ value, min, max, color = '#1A1A1A', on
       </View>
 
       {/* Value label */}
-      <Text style={[styles.label, { color: theme.textSub }]}>{value}</Text>
+      {showLabel && <Text style={[styles.label, { color: theme.textSub }]}>{value}</Text>}
     </View>
   );
 }

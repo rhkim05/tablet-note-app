@@ -47,9 +47,10 @@ interface Props {
   presetColors: string[];
   onColorChange: (hex: string) => void;
   onPresetSave: (index: number, hex: string) => void;
+  onPresetDelete?: () => void;
 }
 
-export default function ColorPickerPanel({ color, presetColors, onColorChange, onPresetSave }: Props) {
+export default function ColorPickerPanel({ color, presetColors, onColorChange, onPresetSave, onPresetDelete }: Props) {
   const theme = useTheme();
   const [hsv, setHsv] = useState<[number, number, number]>(() =>
     hexToHsv(color.length === 7 ? color : '#000000')
@@ -98,6 +99,15 @@ export default function ColorPickerPanel({ color, presetColors, onColorChange, o
         <Text style={[styles.hex, { color: theme.text }]}>{currentHex}</Text>
         <Text style={[styles.hint, { color: theme.textHint }]}>long-press preset to save</Text>
       </View>
+
+      {onPresetDelete && (
+        <>
+          <View style={[styles.sep, { backgroundColor: theme.border }]} />
+          <TouchableOpacity style={styles.deleteBtn} onPress={onPresetDelete}>
+            <Text style={styles.deleteBtnText}>Delete from preset</Text>
+          </TouchableOpacity>
+        </>
+      )}
     </View>
   );
 }
@@ -131,4 +141,13 @@ const styles = StyleSheet.create({
   },
   hex:  { fontSize: 13, fontWeight: '700', color: '#333', letterSpacing: 0.5 },
   hint: { flex: 1, textAlign: 'right', fontSize: 10, color: '#AAA' },
+  deleteBtn: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  deleteBtnText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#E53935',
+  },
 });

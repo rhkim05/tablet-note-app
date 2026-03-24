@@ -1,5 +1,6 @@
 package com.tabletnoteapp.reactbridge
 
+import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import com.facebook.react.bridge.Promise
@@ -15,9 +16,10 @@ class PdfCanvasModule(private val reactContext: ReactApplicationContext) :
 
     override fun getName() = "PdfCanvasModule"
 
-    @ReactMethod fun undo(viewTag: Int)  { withView(viewTag) { it.undo() } }
-    @ReactMethod fun redo(viewTag: Int)  { withView(viewTag) { it.redo() } }
-    @ReactMethod fun clear(viewTag: Int) { withView(viewTag) { it.clearCanvas() } }
+    @ReactMethod fun undo(viewTag: Int)                { withView(viewTag) { it.undo() } }
+    @ReactMethod fun redo(viewTag: Int)                { withView(viewTag) { it.redo() } }
+    @ReactMethod fun clear(viewTag: Int)               { withView(viewTag) { it.clearCanvas() } }
+    @ReactMethod fun deleteSelected(viewTag: Int)      { withView(viewTag) { it.deleteSelected() } }
 
     @ReactMethod
     fun getStrokes(viewTag: Int, promise: Promise) {
@@ -39,6 +41,20 @@ class PdfCanvasModule(private val reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun getScale(viewTag: Int, promise: Promise) {
+        reactContext.runOnUiQueueThread {
+            val view = resolveView(viewTag)
+            if (view != null) promise.resolve(view.scale.toDouble())
+            else promise.reject("ERR_NO_VIEW", "PdfCanvasView not found for tag $viewTag")
+        }
+    }
+
+    @ReactMethod
+    fun setScale(viewTag: Int, scale: Double) {
+        withView(viewTag) { it.applyScale(scale.toFloat()) }
+    }
+
+    @ReactMethod
     fun getPageCount(filePath: String, promise: Promise) {
         try {
             val fd = ParcelFileDescriptor.open(File(filePath), ParcelFileDescriptor.MODE_READ_ONLY)
@@ -50,6 +66,31 @@ class PdfCanvasModule(private val reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             promise.reject("ERR_PDF_PAGE_COUNT", e.message)
         }
+    }
+
+    @ReactMethod
+    fun addTextElement(viewTag: Int, id: String, text: String, x: Double, y: Double, width: Double, height: Double, fontSize: Double, color: String, bold: Boolean, italic: Boolean, fontFamily: String) {
+        withView(viewTag) { it.addTextElement(id, text, x.toFloat(), y.toFloat(), width.toFloat(), height.toFloat(), fontSize.toFloat(), Color.parseColor(color), bold, italic, fontFamily) }
+    }
+
+    @ReactMethod
+    fun updateTextElement(viewTag: Int, id: String, text: String, fontSize: Double, color: String, bold: Boolean, italic: Boolean, fontFamily: String) {
+        withView(viewTag) { it.updateTextElement(id, text, fontSize.toFloat(), Color.parseColor(color), bold, italic, fontFamily) }
+    }
+
+    @ReactMethod
+    fun deleteTextElement(viewTag: Int, id: String) {
+        withView(viewTag) { it.deleteTextElement(id) }
+    }
+
+    @ReactMethod
+    fun setActiveText(viewTag: Int, id: String) {
+        withView(viewTag) { it.setActiveText(id) }
+    }
+
+    @ReactMethod
+    fun clearPendingBox(viewTag: Int) {
+        withView(viewTag) { it.clearPendingBox() }
     }
 
     private fun withView(viewTag: Int, block: (PdfDrawingView) -> Unit) {

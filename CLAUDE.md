@@ -96,12 +96,12 @@ tablet-note-app/
 │               └── ColorGradientViewManager.kt
 └── src/
     ├── screens/
-    │   ├── HomeScreen.tsx         # Note grid, PDF import button
-    │   ├── PdfViewerScreen.tsx    # PDF viewer + canvas overlay
-    │   └── NoteEditorScreen.tsx   # Blank drawing canvas screen
+    │   ├── HomeScreen.tsx         # Note grid, PDF import button, favorites
+    │   ├── PdfViewerScreen.tsx    # PDF viewer + canvas overlay (defaults to scroll tool)
+    │   └── NoteEditorScreen.tsx   # Blank drawing canvas screen (multi-page)
     ├── store/
     │   ├── useNotebookStore.ts    # Notes list + categories with AsyncStorage persistence
-    │   ├── useToolStore.ts        # Active tool state (pen/eraser/select), undo/redo, color/thickness
+    │   ├── useToolStore.ts        # Active tool state (pen/eraser/select/scroll), undo/redo, color/thickness
     │   ├── useSettingsStore.ts    # S-Pen button action mapping, persisted via AsyncStorage
     │   └── useEditorStore.ts      # (stub) Current page, zoom
     ├── navigation/
@@ -119,10 +119,11 @@ tablet-note-app/
     │   ├── Toolbar.tsx            # Full toolbar: tool switching, undo/redo, color/thickness
     │   ├── ColorPickerPanel.tsx   # HSV color picker using ColorGradientView + preset swatches
     │   ├── ThicknessSlider.tsx    # PanResponder-based slider for pen/eraser thickness
+    │   ├── SelectionPopup.tsx     # Floating popup (Cut/Delete/Capture) shown when strokes are selected
     │   └── ThumbnailStrip.tsx     # PDF page thumbnail strip using react-native-pdf-thumbnail
     └── types/
-        ├── noteTypes.ts           # Note, NoteType (includes optional categoryId, drawingUri)
-        ├── categoryTypes.ts       # Category interface + BUILT_IN_CATEGORIES (all/pdfs/notes)
+        ├── noteTypes.ts           # Note, NoteType (includes optional categoryId, drawingUri, isFavorite)
+        ├── categoryTypes.ts       # Category interface + BUILT_IN_CATEGORIES (all/pdfs/notes/favorites)
         └── canvasTypes.ts         # PenColor, ToolMode, StrokeStyle
 ```
 
@@ -131,6 +132,18 @@ tablet-note-app/
 ### Navigation (`src/navigation/index.tsx`)
 
 Uses `@react-navigation/native-stack`. All three routes are wired and active: `Home`, `PdfViewer: { note: Note }`, `NoteEditor: { note: Note }`. `App.tsx` just mounts `<Navigation />`.
+
+### Tool System
+
+`ToolMode` in `canvasTypes.ts` has five values: `'pen' | 'eraser' | 'highlighter' | 'select' | 'scroll'`. These map to `ToolType` in `Stroke.kt` (`PEN`, `ERASER`, `HIGHLIGHTER`, `SELECT`, `SCROLL`).
+
+**Scroll** (✋) and **Select** (✦) are distinct tools with separate touch handlers in `DrawingCanvas.kt`:
+- `SCROLL` → `handleScroll()` — pan/zoom via `VelocityTracker` + `OverScroller` fling; pinch-to-zoom via `ScaleGestureDetector`.
+- `SELECT` → `handleSelect()` — lasso drag to select strokes, then move or resize; emits `canvasSelectionChanged` events consumed by `SelectionPopup`.
+
+In `PdfDrawingView.kt`, both `SCROLL` and `SELECT` route to `handleScroll()` — no lasso selection UI on PDFs.
+
+`PdfViewerScreen` defaults to `'scroll'` tool on mount. `NoteEditorScreen` has no default override (starts as `'pen'`).
 
 ### Drawing Engine
 
@@ -146,6 +159,16 @@ Both views share these implementation details:
 - Undo replays all committed strokes onto a fresh bitmap; redo appends the restored stroke.
 - After each stroke commit or undo/redo, Kotlin emits a `canvasUndoRedoState` device event `{ canUndo, canRedo }`. The respective native view wrapper in `src/native/` subscribes via `DeviceEventEmitter` and syncs `useToolStore`.
 - On eraser `ACTION_UP`, Kotlin emits `canvasEraserLift` (no payload). `CanvasView.tsx` / `PdfCanvasView.tsx` listen and call `setTool('pen')` if `useSettingsStore.autoSwitchToPen` is true.
+
+### Multi-Page Canvas (`DrawingCanvas.kt`)
+
+`NoteEditorScreen` supports an unlimited vertical scroll of A4 pages:
+
+- **Page layout**: `pageHeightPx = viewWidth × 1.4142` (A4 portrait); `PAGE_GAP = 20dp`; grey (#E0E0E0) gutters between white page rects.
+- **Document coordinates**: all stroke points are stored in document space (`yDoc = touchY + scrollY`). The bitmap covers the full doc height; `onDraw` applies `canvas.translate(0, -scrollY)`.
+- **Overscroll to add page**: dragging past ±120dp at top/bottom triggers `addPage()`. Adding at top shifts all stroke Y coords and clears undo history.
+- **Stroke persistence format** — v2 JSON: `{ version: 2, pageCount: N, strokes: [] }`. `NoteEditorScreen` detects empty by checking `strokes.length` (not by comparing the whole string to `'[]'`). Legacy v1 (flat array) is backward-compatible on load.
+- **Events**: `canvasPageChanged { page }` (0-indexed), `canvasPageCountChanged { total }` — `NoteEditorScreen` converts to 1-indexed for display.
 
 ### Bridge (`reactbridge/` ↔ `src/native/`)
 
@@ -170,8 +193,8 @@ Both `NoteEditorScreen` and `PdfViewerScreen` use the same pattern:
 
 ### State Management
 
-- **`useNotebookStore`** — persists `Note[]` + `Category[]` via zustand `persist` + AsyncStorage (key: `notebook-store`). `Note` includes optional `drawingUri` and `categoryId`. `Category` defined in `src/types/categoryTypes.ts`; built-in categories (`all`, `pdfs`, `notes`) are defined as constants and merged with user-created ones at render time.
-- **`useToolStore`** — in-memory only. Holds `activeTool` (pen/eraser/select), `canUndo`, `canRedo`, `penColor`, `penThickness`, `eraserThickness`, `presetColors`. Updated by native view `DeviceEventEmitter` listeners.
+- **`useNotebookStore`** — persists `Note[]` + `Category[]` via zustand `persist` + AsyncStorage (key: `notebook-store`). `Note` includes optional `drawingUri`, `categoryId`, and `isFavorite`. Built-in categories: `all`, `pdfs`, `notes`, `favorites` (defined as constants in `categoryTypes.ts`, merged with user-created ones at render time).
+- **`useToolStore`** — in-memory only. Holds `activeTool` (pen/eraser/highlighter/select/scroll), `canUndo`, `canRedo`, `penColor`, `penThickness`, `eraserThickness`, `highlighterColor`, `highlighterThickness`, `presetColors`. Updated by native view `DeviceEventEmitter` listeners.
 - **`useSettingsStore`** — persists settings via AsyncStorage (key: `settings-store`). Contains: S-Pen button action mappings (`penButtonAction` / `penButtonDoubleAction`, `PenAction` type), `autoSwitchToPen: boolean` (auto-switch to pen after eraser lift, default `true`), `isDarkMode: boolean` (default `false`).
 
 ### Sidebar & S-Pen Button
