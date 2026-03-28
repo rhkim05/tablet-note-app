@@ -1,0 +1,82 @@
+CREATE TABLE Notebook (
+    id            TEXT NOT NULL PRIMARY KEY,
+    title         TEXT NOT NULL,
+    coverColor    INTEGER NOT NULL DEFAULT 0,
+    createdAt     INTEGER NOT NULL,
+    updatedAt     INTEGER NOT NULL,
+    pageCount     INTEGER NOT NULL DEFAULT 0,
+    sortOrder     INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE PdfDocument (
+    id            TEXT NOT NULL PRIMARY KEY,
+    fileName      TEXT NOT NULL,
+    filePath      TEXT NOT NULL,
+    pageCount     INTEGER NOT NULL,
+    fileSizeBytes INTEGER NOT NULL,
+    importedAt    INTEGER NOT NULL
+);
+
+CREATE TABLE Page (
+    id            TEXT NOT NULL PRIMARY KEY,
+    notebookId    TEXT NOT NULL REFERENCES Notebook(id) ON DELETE CASCADE,
+    pageIndex     INTEGER NOT NULL,
+    pageType      TEXT NOT NULL DEFAULT 'blank',
+    width         REAL NOT NULL DEFAULT 1404.0,
+    height        REAL NOT NULL DEFAULT 1984.0,
+    templateType  TEXT,
+    pdfDocumentId TEXT REFERENCES PdfDocument(id),
+    pdfPageIndex  INTEGER,
+    createdAt     INTEGER NOT NULL
+);
+
+CREATE TABLE Stroke (
+    id            TEXT NOT NULL PRIMARY KEY,
+    pageId        TEXT NOT NULL REFERENCES Page(id) ON DELETE CASCADE,
+    brushType     TEXT NOT NULL,
+    brushSize     REAL NOT NULL,
+    colorArgb     INTEGER NOT NULL,
+    strokeOrder   INTEGER NOT NULL,
+    inputData     BLOB NOT NULL,
+    boundingBoxX  REAL NOT NULL,
+    boundingBoxY  REAL NOT NULL,
+    boundingBoxW  REAL NOT NULL,
+    boundingBoxH  REAL NOT NULL,
+    createdAt     INTEGER NOT NULL
+);
+
+CREATE TABLE TextBox (
+    id            TEXT NOT NULL PRIMARY KEY,
+    pageId        TEXT NOT NULL REFERENCES Page(id) ON DELETE CASCADE,
+    x             REAL NOT NULL,
+    y             REAL NOT NULL,
+    width         REAL NOT NULL,
+    height        REAL NOT NULL,
+    content       TEXT NOT NULL DEFAULT '',
+    fontFamily    TEXT NOT NULL DEFAULT 'default',
+    fontSize      REAL NOT NULL DEFAULT 16.0,
+    colorArgb     INTEGER NOT NULL,
+    zOrder        INTEGER NOT NULL,
+    createdAt     INTEGER NOT NULL,
+    updatedAt     INTEGER NOT NULL
+);
+
+CREATE INDEX idx_page_notebook ON Page(notebookId, pageIndex);
+CREATE INDEX idx_stroke_page ON Stroke(pageId, strokeOrder);
+CREATE INDEX idx_textbox_page ON TextBox(pageId);
+
+getAllNotebooks:
+SELECT * FROM Notebook ORDER BY sortOrder ASC, updatedAt DESC;
+
+getNotebookById:
+SELECT * FROM Notebook WHERE id = ?;
+
+insertNotebook:
+INSERT INTO Notebook(id, title, coverColor, createdAt, updatedAt, pageCount, sortOrder)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+getPagesForNotebook:
+SELECT * FROM Page WHERE notebookId = ? ORDER BY pageIndex ASC;
+
+getStrokesForPage:
+SELECT * FROM Stroke WHERE pageId = ? ORDER BY strokeOrder ASC;

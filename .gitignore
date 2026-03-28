@@ -1,0 +1,13 @@
+.gradle/
+build/
+!gradle-wrapper.jar
+
+.idea/
+*.iml
+.DS_Store
+
+local.properties
+*.apk
+*.aab
+
+*.kotlin_module
